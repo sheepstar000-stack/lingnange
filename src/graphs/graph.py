@@ -286,6 +286,26 @@ class FeishuWorkflowOutput(BaseModel):
     success_count: int = Field(default=0, description="成功写入数")
 
 
+def extract_feishu_field(field_value: Any) -> str:
+    """
+    从飞书字段值中提取文本内容
+    飞书字段格式通常是: [{'text': '内容', 'type': 'text'}]
+    """
+    if field_value is None:
+        return ""
+    if isinstance(field_value, str):
+        return field_value
+    if isinstance(field_value, list):
+        texts = []
+        for item in field_value:
+            if isinstance(item, dict) and item.get("type") == "text":
+                texts.append(item.get("text", ""))
+            elif isinstance(item, str):
+                texts.append(item)
+        return "".join(texts)
+    return str(field_value)
+
+
 def feishu_product_workflow_node(
     state: FeishuWorkflowInput,
     config: RunnableConfig,
@@ -323,14 +343,14 @@ def feishu_product_workflow_node(
         fields = record.get("fields", {})
         record_id = record.get("record_id", "")
         
-        # 从飞书记录中提取产品信息（字段名需与你的飞书表格一致）
-        product_name = fields.get("产品名称", "")
-        product_material = fields.get("产品材质", "")
-        product_selling_points = fields.get("产品卖点", "")
-        suitable_scenarios = fields.get("适合场景", "")
-        target_audience = fields.get("目标人群", "")
-        price_range = fields.get("价格区间", "")
-        reference_copy = fields.get("参考文案", "")
+        # 从飞书记录中提取产品信息，使用extract_feishu_field处理字段格式
+        product_name = extract_feishu_field(fields.get("产品名称"))
+        product_material = extract_feishu_field(fields.get("产品材质"))
+        product_selling_points = extract_feishu_field(fields.get("产品卖点"))
+        suitable_scenarios = extract_feishu_field(fields.get("适合场景"))
+        target_audience = extract_feishu_field(fields.get("目标人群"))
+        price_range = extract_feishu_field(fields.get("价格区间"))
+        reference_copy = extract_feishu_field(fields.get("参考文案"))
         
         if not product_name:
             continue

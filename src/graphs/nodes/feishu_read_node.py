@@ -53,8 +53,8 @@ class FeishuBitableReader:
         self,
         app_token: str,
         table_id: str,
-        filter_field: str = "处理状态",
-        filter_value: str = "待处理",
+        filter_field: str = "",
+        filter_value: str = "",
         page_size: int = 100
     ) -> dict:
         """
@@ -63,7 +63,7 @@ class FeishuBitableReader:
         Args:
             app_token: 多维表格的app_token
             table_id: 数据表的table_id
-            filter_field: 筛选字段名
+            filter_field: 筛选字段名（为空则不筛选）
             filter_value: 筛选字段值
             page_size: 分页大小，最大500
         
@@ -71,16 +71,20 @@ class FeishuBitableReader:
             包含记录列表的响应数据
         """
         body = {
-            "filter": {
+            "page_size": page_size
+        }
+        
+        # 只有当筛选字段和值都不为空时才添加筛选条件
+        if filter_field and filter_value:
+            body["filter"] = {
                 "conditions": [{
                     "field_name": filter_field,
                     "operator": "is",
                     "value": [filter_value]
                 }],
                 "conjunction": "and"
-            },
-            "page_size": page_size
-        }
+            }
+        
         return self._request("POST", f"/bitable/v1/apps/{app_token}/tables/{table_id}/records/search", json=body)
     
     def list_fields(self, app_token: str, table_id: str) -> dict:
