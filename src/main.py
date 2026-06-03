@@ -591,6 +591,156 @@ async def health_check():
 async def http_graph_inout_parameter(request: Request):
     return service.graph_inout_schema()
 
+
+# ==================== 飞书机器人 Webhook ====================
+import hashlib
+import hmac
+
+# 飞书应用配置
+FEISHU_APP_ID = "cli_aaaaf1fe64f89ccd"
+FEISHU_APP_SECRET = "LgFjnvGVKzaLvvGsOA8fTh74XsrcPli0"
+
+# 工作流API地址
+WORKFLOW_API_URL = "https://jv7dr2vk3d.coze.site/run"
+
+# 飞书机器人webhook地址（用于发送消息回复）
+FEISHU_WEBHOOK_URL = None  # 需要在飞书群添加机器人后获取
+
+def verify_feishu_signature(timestamp: str, nonce: str, body: str, signature: str) -> bool:
+    """验证飞书请求签名"""
+    if not signature:
+        return True  # 如果没有签名，暂时允许（开发阶段）
+    sign_base = timestamp + nonce + FEISHU_APP_SECRET + body
+    expected_sig = hashlib.sha256(sign_base.encode()).hexdigest()
+    return hmac.compare_digest(expected_sig, signature)
+
+
+@app.post("/feishu/webhook")
+async def feishu_webhook(request: Request):
+    """处理飞书机器人事件订阅请求"""
+    ctx = new_context(method="feishu_webhook", headers=request.headers)
+    request_context.set(ctx)
+    
+    raw_body = await request.body()
+    body_text = raw_body.decode("utf-8")
+    
+    logger.info(f"Feishu webhook received: {body_text}")
+    
+    try:
+        payload = json.loads(body_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error in feishu_webhook: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    
+    # 处理URL验证请求
+    if payload.get("type") == "url_verification":
+        challenge = payload.get("challenge", "")
+        logger.info(f"Feishu URL verification, challenge: {challenge}")
+        return {"challenge": challenge}
+    
+    # 处理消息事件
+    if payload.get("type") == "event_callback":
+        event = payload.get("event", {})
+        event_type = event.get("type", "")
+        
+        # 处理接收消息事件
+        if event_type == "im.message.receive_v1":
+            message = event.get("message", {})
+            content_str = message.get("content", "{}")
+            chat_id = message.get("chat_id", "")
+            
+            try:
+                content = json.loads(content_str)
+            except:
+                content = {"text": content_str}
+            
+            user_text = content.get("text", "")
+            logger.info(f"Feishu message received: chat_id={chat_id}, text={user_text}")
+            
+            # 解析用户指令，调用对应工作流
+            workflow_type = parse_user_command(user_text)
+            
+            if workflow_type:
+                # 调用工作流API
+                workflow_payload = {
+                    "workflow_type": workflow_type,
+                    "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+                    "feishu_topic_table_id": "tblJNjx74uZ3s1vs",
+                    "feishu_product_table_id": "tbllExTlKURFJP2j",
+                    "feishu_content_table_id": "tblg7zZuWKcUvqQX",
+                    "feishu_hot_calendar_table_id": "tblT1KM0397UcGeM",
+                    "feishu_review_table_id": "tblfSaXuLDh6OKEq",
+                }
+                
+                try:
+                    # 调用工作流
+                    result = await service.run(workflow_payload, ctx)
+                    result_text = format_workflow_result(workflow_type, result)
+                    
+                    # TODO: 通过飞书API回复消息到群聊
+                    logger.info(f"Workflow result: {result_text}")
+                    
+                    return {"status": "success", "message": result_text}
+                except Exception as e:
+                    logger.error(f"Workflow execution error: {e}")
+                    return {"status": "error", "message": f"工作流执行失败: {str(e)}"}
+            else:
+                # 无法识别的指令
+                help_text = """请发送以下指令触发工作流：
+1. 生成选题 - 生成热点选题
+2. 生成文案 - 生成选题文案
+3. 客户故事 - 生成客户故事
+4. 图片建议 - 生成图片建议
+5. 数据复盘 - 进行数据复盘"""
+                return {"status": "help", "message": help_text}
+    
+    return {"status": "ok"}
+
+
+def parse_user_command(text: str) -> Optional[str]:
+    """解析用户指令，返回对应的工作流类型"""
+    text = text.lower().strip()
+    
+    command_map = {
+        "生成选题": "feishu_hot_topic",
+        "热点选题": "feishu_hot_topic",
+        "生成文案": "feishu_topic_post",
+        "选题文案": "feishu_topic_post",
+        "客户故事": "feishu_customer_story",
+        "图片建议": "feishu_image_suggestion",
+        "数据复盘": "feishu_weekly_review",
+        "周复盘": "feishu_weekly_review",
+    }
+    
+    for cmd, workflow in command_map.items():
+        if cmd in text:
+            return workflow
+    
+    return None
+
+
+def format_workflow_result(workflow_type: str, result: dict) -> str:
+    """格式化工作流执行结果"""
+    if not result:
+        return "工作流执行完成，但无返回结果"
+    
+    if "error" in result or "Error" in str(result):
+        return f"工作流执行失败: {result}"
+    
+    workflow_names = {
+        "feishu_hot_topic": "热点选题",
+        "feishu_topic_post": "选题文案",
+        "feishu_customer_story": "客户故事",
+        "feishu_image_suggestion": "图片建议",
+        "feishu_weekly_review": "数据复盘",
+    }
+    
+    name = workflow_names.get(workflow_type, workflow_type)
+    return f"✅ {name}工作流已完成！\n\n结果: {json.dumps(result, ensure_ascii=False, indent=2)[:500]}..."
+
+# ==================== 飞书机器人 Webhook End ====================
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Start FastAPI server")
     parser.add_argument("-m", type=str, default="http", help="Run mode, support http,flow,node")

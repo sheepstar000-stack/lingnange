@@ -382,7 +382,7 @@ def llm_invoke(
     ctx = None,
 ) -> str:
     """调用LLM，带重试机制。"""
-    last_error = None
+    last_error: Exception = Exception("LLM调用失败，未知错误")
     for attempt in range(max_retries):
         try:
             kwargs = {"messages": messages, "model": model}
@@ -452,7 +452,7 @@ def get_account_context(account: str) -> str:
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["feishu_hot_topic", "feishu_topic_post", "feishu_customer_story", "feishu_image_suggestion", "feishu_weekly_review"] = Field(
+    workflow_type: Literal["热点选题", "选题文案", "客户故事", "图片建议", "数据复盘"] = Field(
         ...,
         description="工作流类型"
     )
@@ -503,7 +503,11 @@ def feishu_hot_topic_workflow_node(
     config: RunnableConfig,
     runtime: Runtime[Context]
 ) -> FeishuWorkflowOutput:
-    """从热点日历库+产品库读取数据，生成选题，写入选题库"""
+    """
+    title: 热点选题
+    desc: 从热点日历库+产品库读取数据，生成选题，写入选题库
+    integrations: 飞书多维表格, 大语言模型
+    """
     ctx = runtime.context
 
     # 步骤1: 读取热点日历库
@@ -673,7 +677,11 @@ def feishu_topic_post_workflow_node(
     config: RunnableConfig,
     runtime: Runtime[Context]
 ) -> FeishuWorkflowOutput:
-    """从选题库读取通过的选题→读取产品素材→生成文案→写入内容成品库"""
+    """
+    title: 选题文案
+    desc: 从选题库读取通过的选题→读取产品素材→生成文案→写入内容成品库
+    integrations: 飞书多维表格, 大语言模型
+    """
     ctx = runtime.context
 
     app_token = state.feishu_app_token
@@ -866,7 +874,11 @@ def feishu_customer_story_workflow_node(
     config: RunnableConfig,
     runtime: Runtime[Context]
 ) -> FeishuWorkflowOutput:
-    """根据手动输入的客户信息生成故事文案，写入内容成品库"""
+    """
+    title: 客户故事
+    desc: 根据手动输入的客户信息生成故事文案，写入内容成品库
+    integrations: 飞书多维表格, 大语言模型
+    """
     ctx = runtime.context
 
     if not state.customer_background or not state.purchased_product:
@@ -964,7 +976,11 @@ def feishu_image_suggestion_workflow_node(
     config: RunnableConfig,
     runtime: Runtime[Context]
 ) -> FeishuWorkflowOutput:
-    """从内容成品库读取待配图内容，生成图片建议，更新内容库"""
+    """
+    title: 图片建议
+    desc: 从内容成品库读取待配图内容，生成图片建议，更新内容库
+    integrations: 飞书多维表格, 大语言模型
+    """
     ctx = runtime.context
 
     # 步骤1: 读取内容成品库中待审核的内容
@@ -1079,7 +1095,11 @@ def feishu_weekly_review_workflow_node(
     config: RunnableConfig,
     runtime: Runtime[Context]
 ) -> FeishuWorkflowOutput:
-    """从数据复盘表读取本周数据，生成分析报告，回写复盘备注和选题建议"""
+    """
+    title: 数据复盘
+    desc: 从数据复盘表读取本周数据，生成分析报告，回写复盘备注和选题建议
+    integrations: 飞书多维表格, 大语言模型
+    """
     ctx = runtime.context
 
     # 步骤1: 读取数据复盘表
@@ -1240,28 +1260,28 @@ builder = StateGraph(
     output_schema=WorkflowOutput
 )
 
-builder.add_node("feishu_hot_topic", feishu_hot_topic_workflow_node)
-builder.add_node("feishu_topic_post", feishu_topic_post_workflow_node)
-builder.add_node("feishu_customer_story", feishu_customer_story_workflow_node)
-builder.add_node("feishu_image_suggestion", feishu_image_suggestion_workflow_node)
-builder.add_node("feishu_weekly_review", feishu_weekly_review_workflow_node)
+builder.add_node("热点选题", feishu_hot_topic_workflow_node)
+builder.add_node("选题文案", feishu_topic_post_workflow_node)
+builder.add_node("客户故事", feishu_customer_story_workflow_node)
+builder.add_node("图片建议", feishu_image_suggestion_workflow_node)
+builder.add_node("数据复盘", feishu_weekly_review_workflow_node)
 
 builder.add_conditional_edges(
     source="__start__",
     path=route_workflow,
     path_map={
-        "feishu_hot_topic": "feishu_hot_topic",
-        "feishu_topic_post": "feishu_topic_post",
-        "feishu_customer_story": "feishu_customer_story",
-        "feishu_image_suggestion": "feishu_image_suggestion",
-        "feishu_weekly_review": "feishu_weekly_review"
+        "热点选题": "热点选题",
+        "选题文案": "选题文案",
+        "客户故事": "客户故事",
+        "图片建议": "图片建议",
+        "数据复盘": "数据复盘"
     }
 )
 
-builder.add_edge("feishu_hot_topic", END)
-builder.add_edge("feishu_topic_post", END)
-builder.add_edge("feishu_customer_story", END)
-builder.add_edge("feishu_image_suggestion", END)
-builder.add_edge("feishu_weekly_review", END)
+builder.add_edge("热点选题", END)
+builder.add_edge("选题文案", END)
+builder.add_edge("客户故事", END)
+builder.add_edge("图片建议", END)
+builder.add_edge("数据复盘", END)
 
 main_graph = builder.compile()
