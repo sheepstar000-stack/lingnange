@@ -125,6 +125,26 @@ class CustomerStoryOutput(BaseModel):
     result: str = Field(..., description="生成的客户故事型小红书笔记，包含5个标题、正文（400-700字）、封面文案、标签、评论区互动问题")
 
 
+class FeishuCustomerStoryInput(BaseModel):
+    """飞书客户故事工作流的输入"""
+    feishu_app_token: str = Field(..., description="飞书多维表格app_token")
+    feishu_content_table_id: str = Field(..., description="内容成品库table_id")
+    customer_background: str = Field(..., description="客户大致身份，如'30岁设计师'")
+    purchased_product: str = Field(..., description="购买的产品")
+    purchase_reason: str = Field(..., description="购买原因")
+    usage_scenario: str = Field(..., description="使用场景")
+    customer_feedback: str = Field(..., description="客户反馈")
+    publish_account: str = Field(default="灵楠阁品牌号", description="发布账号")
+
+
+class FeishuImageSuggestionInput(BaseModel):
+    """飞书图片建议工作流的输入"""
+    feishu_app_token: str = Field(..., description="飞书多维表格app_token")
+    feishu_content_table_id: str = Field(..., description="内容成品库table_id")
+    feishu_product_table_id: str = Field(..., description="产品素材库table_id")
+    publish_account: str = Field(default="灵楠阁品牌号", description="发布账号")
+
+
 # ============================================
 # 工作流4：图片/封面建议器
 # ============================================

@@ -11,6 +11,7 @@ from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
+from coze_coding_dev_sdk import LLMClient
 
 from graphs.state import (
     GlobalState,
@@ -24,6 +25,7 @@ from graphs.state import (
     FeishuHotTopicInput,
     FeishuTopicPostInput,
     FeishuTopicPostOutput,
+    FeishuImageSuggestionInput,
 )
 
 from graphs.nodes.hot_topic_generator_node import hot_topic_generator_node
@@ -40,9 +42,9 @@ from graphs.nodes.feishu_write_node import feishu_write_node
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic", "feishu_topic_post"] = Field(
+    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic", "feishu_topic_post", "feishu_customer_story", "feishu_image_suggestion"] = Field( 
         ..., 
-        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)、feishu_topic_post(飞书选题文案)"
+        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)、feishu_topic_post(飞书选题文案)、feishu_customer_story(飞书客户故事)" 
     )
     
     # 热点选题生成器参数
@@ -725,6 +727,255 @@ def feishu_topic_post_workflow_node(
 
 
 # ============================================
+# 工作流③：客户故事生成器（手动输入 → 写入内容库）
+# ============================================
+class FeishuCustomerStoryInput(BaseModel):
+    """客户故事工作流输入"""
+    workflow_type: str = Field(default="feishu_customer_story", description="工作流类型")
+    feishu_app_token: str = Field(..., description="飞书多维表格app_token")
+    feishu_content_table_id: str = Field(..., description="内容成品库table_id")
+    # 手动输入的参数
+    customer_background: str = Field(..., description="客户背景")
+    purchased_product: str = Field(..., description="购买产品")
+    purchase_reason: str = Field(..., description="购买原因")
+    usage_scenario: str = Field(..., description="使用场景")
+    customer_feedback: str = Field(..., description="客户反馈")
+    account: str = Field(default="灵楠阁品牌号", description="发布账号")
+
+
+def feishu_customer_story_workflow_node(
+    state: FeishuCustomerStoryInput, 
+    config: RunnableConfig, 
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 客户故事生成器
+    desc: 根据手动输入的客户信息生成故事文案，写入内容成品库
+    integrations: 大语言模型, 飞书多维表格
+    """
+    results = []
+    
+    # 构建提示词
+    prompt = f"""你是小红书客户故事文案专家，擅长把真实购买经历写成有审美、有情绪、有文化感的内容。
+
+请根据以下信息写一篇客户故事型小红书笔记：
+客户背景：{state.customer_background}
+购买产品：{state.purchased_product}
+购买原因：{state.purchase_reason}
+使用场景：{state.usage_scenario}
+客户反馈：{state.customer_feedback}
+发布账号：{state.account}
+
+请输出：
+一、5个标题（不同类型：情绪型、故事型、产品亮点型、文化型、反转型）
+二、正文（400-700字）
+结构要求：
+- 开头：客户的一句话/一个场景（制造代入感）
+- 中段：为什么买、怎么选的、收到后的感受（故事线）
+- 转折：产品给生活带来的小变化（不是奇迹，是真实细节）
+- 结尾：自然引导评论或私信
+三、封面文案（不超过10字）
+四、8-12个标签
+五、评论区互动问题（2-3个）
+
+要求：
+- 故事真实、克制、动人，不要夸张
+- 突出产品外观、材质、文化气息、陪伴感、仪式感
+- 不要写成玄学承诺（禁止：招财、转运、辟邪、改命）
+- 可以表达："给自己一点稳定感""在忙乱生活里保留一点仪式感""讨一个美好寓意"
+"""
+    
+    # 调用LLM
+    from langchain_core.messages import HumanMessage
+    llm_client = LLMClient()
+    llm_result = llm_client.invoke(
+        messages=[HumanMessage(content=prompt)],
+        model="doubao-seed-2-0-pro-260215",
+        temperature=0.7
+    )
+    
+    content = llm_result.content if isinstance(llm_result.content, str) else str(llm_result.content)
+    
+    # 解析输出
+    post_title = ""
+    titles = re.findall(r"1\.\s*(?:情绪型|故事型|产品亮点型|文化型|反转型)?[:：]?\s*(.+)", content)
+    if titles:
+        post_title = titles[0].strip()
+    if not post_title:
+        post_title = f"{state.customer_background}的{state.purchased_product}故事"
+    
+    # 提取正文
+    body_match = re.search(r"二[、\.．]\s*正文[^国]*?(?=三[、\.．]|$)", content, re.DOTALL)
+    post_body = body_match.group(0).replace("二、正文", "").strip() if body_match else content[:500]
+    
+    # 提取标签
+    tags_match = re.search(r"四[、\.．]\s*[^国]*?(?=五[、\.．]|$)", content, re.DOTALL)
+    post_tags = ""
+    if tags_match:
+        tags_text = tags_match.group(0)
+        post_tags = "\n".join(re.findall(r"#\S+", tags_text))
+    
+    # 提取互动问题
+    interaction_match = re.search(r"五[、\.．]\s*评论区互动问题[^国]*$", content, re.DOTALL)
+    comment_guide = ""
+    if interaction_match:
+        questions = re.findall(r"\d+[\.、．]\s*(.+?)(?=\n\d|\n$|$)", interaction_match.group(0), re.DOTALL)
+        if questions:
+            comment_guide = questions[0].strip()
+    
+    # 写入飞书内容库
+    write_input = FeishuWriteInput(
+        app_token=state.feishu_app_token,
+        table_id=state.feishu_content_table_id,
+        record_id="",
+        fields={
+            "发布标题": post_title,
+            "正文": post_body,
+            "内容栏目": "SOP5故事",
+            "发布账号": state.account,
+            "发布标签": post_tags,
+            "评论区引导语": comment_guide,
+            "发布状态": "待审核"
+        }
+    )
+    write_output = feishu_write_node(write_input, config, runtime)
+    
+    if write_output.success:
+        results.append(f"✓ {post_title} 客户故事已生成并写入")
+    else:
+        results.append(f"✗ {post_title} 写入失败: {write_output.message}")
+    
+    return FeishuWorkflowOutput(
+        workflow_type="feishu_customer_story",
+        result="\n".join(results),
+        processed_count=1,
+        success_count=1 if write_output.success else 0
+    )
+
+
+# ============================================
+# 工作流④：图片建议器（读内容库+产品库 → 更新内容库）
+# ============================================
+def feishu_image_suggestion_workflow_node(
+    state: FeishuImageSuggestionInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 飞书图片建议工作流
+    desc: 从内容成品库读取待配图内容，生成图片建议，更新内容库
+    integrations: 飞书多维表格, 大语言模型
+    """
+    from coze_coding_dev_sdk import llm
+    from coze_workload_identity import Client
+    import requests
+    
+    # 获取飞书访问令牌
+    client = Client()
+    access_token = client.get_integration_credential("integration-feishu-base")
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    base_url = "https://open.larkoffice.com/open-apis"
+    
+    # 1. 从内容成品库读取待审核的内容
+    search_url = f"{base_url}/bitable/v1/apps/{state.feishu_app_token}/tables/{state.feishu_content_table_id}/records/search"
+    search_body = {
+        "filter": {
+            "conditions": [{"field_name": "发布状态", "operator": "is", "value": ["待审核"]}],
+            "conjunction": "and"
+        },
+        "page_size": 1
+    }
+    
+    search_resp = requests.post(search_url, headers=headers, json=search_body)
+    search_data = search_resp.json()
+    
+    if search_data.get("code") != 0:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_image_suggestion",
+            result=f"查询失败: {search_data.get('msg', '')}",
+            processed_count=0,
+            success_count=0
+        )
+    
+    content_records = search_data.get("data", {}).get("items", [])
+    if not content_records:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_image_suggestion",
+            result="没有找到待配图的内容记录",
+            processed_count=0,
+            success_count=0
+        )
+    
+    content_record = content_records[0]
+    content_fields = content_record.get("fields", {})
+    content_record_id = content_record.get("record_id", "")
+    post_title = extract_feishu_field(content_fields.get("发布标题", ""))
+    content_body = extract_feishu_field(content_fields.get("正文", ""))
+    
+    # 2. 生成图片建议
+    prompt = f"""你是小红书视觉运营和新中式审美设计顾问。
+请为以下内容设计图片发布方案：
+
+内容标题：{post_title}
+
+请输出：
+一、封面图建议
+1. 推荐哪种图做封面
+2. 封面主标题3个（每个不超过12字）
+
+二、多图笔记图片顺序（1-9编号）
+
+三、每张图的修图方向
+
+四、是否需要补拍
+
+五、AI生图提示词（3个）
+"""
+    
+    from langchain_core.messages import HumanMessage
+    llm_client = LLMClient()
+    llm_result = llm_client.invoke(
+        messages=[HumanMessage(content=prompt)],
+        model="doubao-seed-2-0-pro-260215",
+        temperature=0.7
+    )
+    image_suggestion = llm_result.content if hasattr(llm_result, 'content') else str(llm_result)
+    
+    # 3. 更新内容成品库（追加图片建议到正文）
+    update_url = f"{base_url}/bitable/v1/apps/{state.feishu_app_token}/tables/{state.feishu_content_table_id}/records/batch_update"
+    update_body = {
+        "records": [{
+            "record_id": content_record_id,
+            "fields": {
+                "正文": content_body + f"\n\n---\n**图片建议**：\n{image_suggestion}"
+            }
+        }]
+    }
+    
+    update_resp = requests.post(update_url, headers=headers, json=update_body)
+    update_data = update_resp.json()
+    
+    if update_data.get("code") == 0:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_image_suggestion",
+            result=f"✓ {post_title} 图片建议已更新",
+            processed_count=1,
+            success_count=1
+        )
+    else:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_image_suggestion",
+            result=f"✗ {post_title} 更新失败: {update_data.get('msg', '')}",
+            processed_count=1,
+            success_count=0
+        )
+
+
+# ============================================
 # 条件路由函数
 # ============================================
 def route_workflow(state: EntryNodeInput) -> str:
@@ -782,6 +1033,16 @@ builder.add_node(
     feishu_topic_post_workflow_node,
     metadata={"type": "agent", "llm_cfg": "config/product_post_generator_cfg.json"}
 )
+builder.add_node(
+    "feishu_customer_story",
+    feishu_customer_story_workflow_node,
+    metadata={"type": "agent", "llm_cfg": "config/customer_story_generator_cfg.json"}
+)
+builder.add_node(
+    "feishu_image_suggestion",
+    feishu_image_suggestion_workflow_node,
+    metadata={"type": "agent", "llm_cfg": "config/image_suggestion_cfg.json"}
+)
 
 # 添加条件边作为入口
 builder.add_conditional_edges(
@@ -795,7 +1056,9 @@ builder.add_conditional_edges(
         "weekly_review": "weekly_review",
         "feishu_product": "feishu_product",
         "feishu_hot_topic": "feishu_hot_topic",
-        "feishu_topic_post": "feishu_topic_post"
+        "feishu_topic_post": "feishu_topic_post",
+        "feishu_customer_story": "feishu_customer_story",
+        "feishu_image_suggestion": "feishu_image_suggestion"
     }
 )
 
@@ -808,6 +1071,8 @@ builder.add_edge("weekly_review", END)
 builder.add_edge("feishu_product", END)
 builder.add_edge("feishu_hot_topic", END)
 builder.add_edge("feishu_topic_post", END)
+builder.add_edge("feishu_customer_story", END)
+builder.add_edge("feishu_image_suggestion", END)
 
 # 编译图
 main_graph = builder.compile()

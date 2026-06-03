@@ -15,6 +15,9 @@
 | 每周数据复盘器 | weekly_review | 分析账号内容表现，输出优化建议 | 本周数据、上周数据 |
 | **飞书产品文案自动化** | feishu_product | 从飞书产品库读取→生成文案→写入内容表 | 飞书app_token、产品表ID、内容表ID |
 | **飞书热点选题自动化** | feishu_hot_topic | 从飞书热点日历+产品库读取→生成选题→写入选题库 | 飞书app_token、热点日历ID、产品表ID、选题库ID |
+| **飞书选题文案自动化** | feishu_topic_post | 从选题库读取通过的选题→生成文案→写入内容库 | 飞书app_token、选题库ID、产品表ID、内容库ID |
+| **飞书客户故事自动化** | feishu_customer_story | 手动输入客户信息→生成故事→写入内容库 | 客户背景、购买产品、购买原因、使用场景、反馈 |
+| **飞书图片建议自动化** | feishu_image_suggestion | 从内容库读取待审核内容→生成图片建议→更新内容库 | 飞书app_token、内容库ID、产品表ID |
 
 ## 节点清单
 
@@ -25,7 +28,11 @@
 | customer_story | `nodes/customer_story_generator_node.py` | agent | 客户故事生成 | `config/customer_story_generator_cfg.json` |
 | image_suggestion | `nodes/image_suggestion_node.py` | agent | 图片建议生成 | `config/image_suggestion_cfg.json` |
 | weekly_review | `nodes/weekly_review_node.py` | agent | 数据复盘分析 | `config/weekly_review_cfg.json` |
-| feishu_product | `nodes/feishu_read_node.py` + `nodes/feishu_write_node.py` | agent | 飞书读写集成 | `config/product_post_generator_cfg.json` |
+| feishu_product | `nodes/feishu_read_node.py` + `nodes/feishu_write_node.py` | agent | 飞书产品文案自动化 | `config/product_post_generator_cfg.json` |
+| feishu_hot_topic | `graph.py` (内联) | agent | 飞书热点选题自动化 | `config/hot_topic_generator_cfg.json` |
+| feishu_topic_post | `graph.py` (内联) | agent | 飞书选题文案自动化 | `config/product_post_generator_cfg.json` |
+| feishu_customer_story | `graph.py` (内联) | agent | 飞书客户故事自动化 | `config/customer_story_generator_cfg.json` |
+| feishu_image_suggestion | `graph.py` (内联) | agent | 飞书图片建议自动化 | `config/image_suggestion_cfg.json` |
 | feishu_read | `nodes/feishu_read_node.py` | task | 飞书表格读取 | - |
 | feishu_write | `nodes/feishu_write_node.py` | task | 飞书表格写入 | - |
 
@@ -82,17 +89,54 @@ config/
 }
 ```
 
-### 2. 飞书自动化工作流调用（方案C）
+### 2. 飞书自动化工作流调用
 
+#### 热点选题自动化
 ```json
 {
-  "workflow_type": "feishu_product",
-  "feishu_app_token": "你的飞书多维表格app_token",
-  "feishu_table_id": "产品数据表的table_id",
-  "feishu_content_table_id": "内容输出表的table_id",
-  "feishu_filter_field": "处理状态",
-  "feishu_filter_value": "待处理",
+  "workflow_type": "feishu_hot_topic",
+  "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+  "feishu_hot_calendar_table_id": "tblT1KM0397UcGeM",
+  "feishu_product_table_id": "tbllExTlKURFJP2j",
+  "feishu_topic_table_id": "tblJNjx74uZ3s1vs",
+  "target_audience": "25-35岁女性",
+  "content_style": "新中式、克制、种草但不硬广"
+}
+```
+
+#### 选题文案自动化
+```json
+{
+  "workflow_type": "feishu_topic_post",
+  "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+  "feishu_topic_table_id": "tblJNjx74uZ3s1vs",
+  "feishu_product_table_id": "tbllExTlKURFJP2j",
+  "feishu_content_table_id": "tblg7zZuWKcUvqQX",
   "publish_account": "灵楠阁品牌号"
+}
+```
+
+#### 客户故事自动化
+```json
+{
+  "workflow_type": "feishu_customer_story",
+  "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+  "feishu_content_table_id": "tblg7zZuWKcUvqQX",
+  "customer_background": "30岁设计师",
+  "purchased_product": "金丝楠手串",
+  "purchase_reason": "生日礼物",
+  "usage_scenario": "日常佩戴",
+  "customer_feedback": "很喜欢"
+}
+```
+
+#### 图片建议自动化
+```json
+{
+  "workflow_type": "feishu_image_suggestion",
+  "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+  "feishu_content_table_id": "tblg7zZuWKcUvqQX",
+  "feishu_product_table_id": "tbllExTlKURFJP2j"
 }
 ```
 
