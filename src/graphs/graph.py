@@ -21,6 +21,7 @@ from graphs.state import (
     WeeklyReviewInput,
     FeishuReadInput,
     FeishuWriteInput,
+    FeishuHotTopicInput,
 )
 
 from graphs.nodes.hot_topic_generator_node import hot_topic_generator_node
@@ -37,9 +38,9 @@ from graphs.nodes.feishu_write_node import feishu_write_node
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product"] = Field(
+    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic"] = Field(
         ..., 
-        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案自动生成)"
+        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)"
     )
     
     # 热点选题生成器参数
@@ -74,12 +75,17 @@ class WorkflowInput(BaseModel):
     weekly_data: str = Field(default="", description="本周数据")
     last_week_data: str = Field(default="", description="上周数据")
     
-    # 飞书集成参数（方案C）
+    # 飞书集成参数
     feishu_app_token: str = Field(default="", description="飞书多维表格的app_token")
     feishu_table_id: str = Field(default="", description="飞书产品数据表的table_id")
     feishu_content_table_id: str = Field(default="", description="飞书内容输出表的table_id")
     feishu_filter_field: str = Field(default="处理状态", description="飞书筛选字段名")
     feishu_filter_value: str = Field(default="待处理", description="飞书筛选字段值")
+    
+    # 飞书热点选题参数
+    feishu_hot_calendar_table_id: str = Field(default="tblT1KM0397UcGeM", description="热点日历表table_id")
+    feishu_product_table_id: str = Field(default="tbllExTlKURFJP2j", description="产品素材表table_id")
+    feishu_topic_table_id: str = Field(default="tblJNjx74uZ3s1vs", description="选题库table_id")
 
 
 class WorkflowOutput(BaseModel):
@@ -122,6 +128,10 @@ class EntryNodeInput(BaseModel):
     feishu_content_table_id: str = Field(default="", description="飞书内容表table_id")
     feishu_filter_field: str = Field(default="处理状态", description="飞书筛选字段")
     feishu_filter_value: str = Field(default="待处理", description="飞书筛选值")
+    # 飞书热点选题参数
+    feishu_hot_calendar_table_id: str = Field(default="tblT1KM0397UcGeM", description="热点日历表table_id")
+    feishu_product_table_id: str = Field(default="tbllExTlKURFJP2j", description="产品素材表table_id")
+    feishu_topic_table_id: str = Field(default="tblJNjx74uZ3s1vs", description="选题库table_id")
 
 
 class EntryNodeOutput(BaseModel):
@@ -424,6 +434,111 @@ def feishu_product_workflow_node(
     )
 
 
+def feishu_hot_topic_workflow_node(
+    state: EntryNodeInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 飞书热点选题工作流
+    desc: 从热点日历库+产品库读取数据，生成选题，写入选题库
+    integrations: 飞书多维表格, 大语言模型
+    """
+    # 步骤1: 读取热点日历库
+    hot_calendar_input = FeishuReadInput(
+        app_token=state.feishu_app_token,
+        table_id=state.feishu_hot_calendar_table_id,
+        filter_field=state.feishu_filter_field or "状态",
+        filter_value=state.feishu_filter_value or "待准备",
+        page_size=5
+    )
+    hot_calendar_output = feishu_read_node(hot_calendar_input, config, runtime)
+    
+    if hot_calendar_output.record_count == 0:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_hot_topic",
+            result="没有找到待处理的热点",
+            processed_count=0,
+            success_count=0
+        )
+    
+    # 步骤2: 读取产品素材库
+    product_input = FeishuReadInput(
+        app_token=state.feishu_app_token,
+        table_id=state.feishu_product_table_id,
+        filter_field="产品状态",
+        filter_value="可发布",
+        page_size=10
+    )
+    product_output = feishu_read_node(product_input, config, runtime)
+    
+    # 提取产品信息
+    products = []
+    for record in product_output.records:
+        fields = record.get("fields", {})
+        product_name = extract_feishu_field(fields.get("产品名称"))
+        selling_point = extract_feishu_field(fields.get("核心卖点"))
+        if product_name:
+            products.append(f"{product_name}+{selling_point}" if selling_point else product_name)
+    
+    available_products = "，".join(products)
+    
+    # 步骤3: 处理第一条热点生成选题（测试用）
+    success_count = 0
+    results = []
+    
+    # 只取第一条记录进行测试
+    if hot_calendar_output.records:
+        record = hot_calendar_output.records[0]
+        fields = record.get("fields", {})
+        hot_record_id = record.get("record_id", "")
+        
+        # 提取热点信息
+        hot_topic_name = extract_feishu_field(fields.get("热点名称"))
+        hot_topic_date = extract_feishu_field(fields.get("热点日期"))
+        account = extract_feishu_field(fields.get("适合账号")) or state.publish_account
+        
+        if hot_topic_name:
+            # 调用热点选题生成器
+            topic_input = HotTopicInput(
+                hot_topic_name=hot_topic_name,
+                hot_topic_date=hot_topic_date,
+                account=account,
+                available_products=available_products,
+                target_audience=state.target_audience or "25-35岁女性，喜欢传统文化和审美生活方式",
+                content_style=state.content_style or "新中式、克制、种草但不硬广"
+            )
+            topic_output = hot_topic_generator_node(topic_input, config, runtime)
+            
+            # 步骤4: 写入选题库（关联热点需要传入记录ID列表）
+            write_input = FeishuWriteInput(
+                app_token=state.feishu_app_token,
+                table_id=state.feishu_topic_table_id,
+                record_id="",
+                fields={
+                    "选题标题": hot_topic_name,  # 暂用热点名称作为选题标题
+                    "切入角度": topic_output.result,  # 全文写入
+                    "目标账号": account,
+                    "关联热点": [hot_record_id] if hot_record_id else [],  # 单向链接需要记录ID列表
+                    "选题状态": "待审核"
+                }
+            )
+            write_output = feishu_write_node(write_input, config, runtime)
+            
+            if write_output.success:
+                success_count += 1
+                results.append(f"✓ {hot_topic_name} 选题已生成并写入")
+            else:
+                results.append(f"✗ {hot_topic_name} 写入失败: {write_output.message}")
+    
+    return FeishuWorkflowOutput(
+        workflow_type="feishu_hot_topic",
+        result="\n".join(results),
+        processed_count=hot_calendar_output.record_count,
+        success_count=success_count
+    )
+
+
 # ============================================
 # 条件路由函数
 # ============================================
@@ -472,6 +587,11 @@ builder.add_node(
     feishu_product_workflow_node,
     metadata={"type": "agent", "llm_cfg": "config/product_post_generator_cfg.json"}
 )
+builder.add_node(
+    "feishu_hot_topic",
+    feishu_hot_topic_workflow_node,
+    metadata={"type": "agent", "llm_cfg": "config/hot_topic_generator_cfg.json"}
+)
 
 # 添加条件边作为入口
 builder.add_conditional_edges(
@@ -483,7 +603,8 @@ builder.add_conditional_edges(
         "customer_story": "customer_story",
         "image_suggestion": "image_suggestion",
         "weekly_review": "weekly_review",
-        "feishu_product": "feishu_product"
+        "feishu_product": "feishu_product",
+        "feishu_hot_topic": "feishu_hot_topic"
     }
 )
 
@@ -494,6 +615,7 @@ builder.add_edge("customer_story", END)
 builder.add_edge("image_suggestion", END)
 builder.add_edge("weekly_review", END)
 builder.add_edge("feishu_product", END)
+builder.add_edge("feishu_hot_topic", END)
 
 # 编译图
 main_graph = builder.compile()

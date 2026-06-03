@@ -66,6 +66,28 @@ class HotTopicOutput(BaseModel):
 
 
 # ============================================
+# 工作流1飞书版：热点选题生成器（飞书集成）
+# ============================================
+class FeishuHotTopicInput(BaseModel):
+    """飞书版热点选题生成器的输入"""
+    feishu_app_token: str = Field(..., description="飞书多维表格的app_token")
+    feishu_hot_calendar_table_id: str = Field(default="tblT1KM0397UcGeM", description="热点日历表的table_id")
+    feishu_product_table_id: str = Field(default="tbllExTlKURFJP2j", description="产品素材表的table_id")
+    feishu_topic_table_id: str = Field(default="tblJNjx74uZ3s1vs", description="选题库的table_id")
+    feishu_filter_field: str = Field(default="状态", description="热点筛选字段名")
+    feishu_filter_value: str = Field(default="待准备", description="热点筛选值")
+    publish_account: str = Field(default="灵楠阁品牌号", description="发布账号")
+    target_audience: str = Field(default="25-35岁女性，喜欢传统文化和审美生活方式", description="目标人群")
+    content_style: str = Field(default="新中式、克制、种草但不硬广", description="内容风格")
+
+
+class FeishuHotTopicOutput(BaseModel):
+    """飞书版热点选题生成器的输出"""
+    result: str = Field(..., description="执行结果：成功生成的选题数量和详情")
+    topics_created: int = Field(default=0, description="生成的选题数量")
+
+
+# ============================================
 # 工作流2：产品发布文案生成器
 # ============================================
 class ProductPostInput(BaseModel):
