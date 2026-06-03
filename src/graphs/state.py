@@ -176,20 +176,70 @@ class WeeklyReviewOutput(BaseModel):
 
 
 # ============================================
+# 飞书版工作流5：每周数据复盘器
+# ============================================
+class FeishuWeeklyReviewInput(BaseModel):
+    """飞书版每周数据复盘器的输入"""
+    feishu_app_token: str = Field(..., description="飞书多维表格app_token")
+    feishu_review_table_id: str = Field(..., description="数据复盘表table_id")
+    feishu_topic_table_id: str = Field(..., description="选题库table_id")
+
+
+class FeishuWeeklyReviewOutput(BaseModel):
+    """飞书版每周数据复盘器的输出"""
+    result: str = Field(default="", description="执行结果")
+
+
+# ============================================
 # 全局状态（用于图编排）
 # ============================================
 class GlobalState(BaseModel):
     """全局状态定义"""
+    # 工作流类型
+    workflow_type: str = Field(default="", description="工作流类型")
     # 热点选题相关
+    hot_topic_name: str = Field(default="", description="热点名称")
+    hot_topic_date: str = Field(default="", description="热点日期")
     hot_topic_result: str = Field(default="", description="热点选题生成结果")
     # 产品文案相关
+    product_name: str = Field(default="", description="产品名称")
     product_post_result: str = Field(default="", description="产品文案生成结果")
     # 客户故事相关
+    customer_background: str = Field(default="", description="客户背景")
     customer_story_result: str = Field(default="", description="客户故事生成结果")
     # 图片建议相关
+    image_description: str = Field(default="", description="图片描述")
     image_suggestion_result: str = Field(default="", description="图片建议生成结果")
     # 数据复盘相关
+    weekly_data: str = Field(default="", description="本周数据")
+    last_week_data: str = Field(default="", description="上周数据")
     weekly_review_result: str = Field(default="", description="每周数据复盘结果")
+    # 飞书集成参数
+    feishu_app_token: str = Field(default="", description="飞书多维表格app_token")
+    feishu_table_id: str = Field(default="", description="飞书产品表table_id")
+    feishu_content_table_id: str = Field(default="", description="飞书内容表table_id")
+    feishu_filter_field: str = Field(default="", description="飞书筛选字段")
+    feishu_filter_value: str = Field(default="", description="飞书筛选值")
+    feishu_hot_calendar_table_id: str = Field(default="", description="热点日历表table_id")
+    feishu_product_table_id: str = Field(default="", description="产品素材表table_id")
+    feishu_topic_table_id: str = Field(default="", description="选题库table_id")
+    feishu_review_table_id: str = Field(default="", description="数据复盘表table_id")
+    # 其他参数
+    account: str = Field(default="", description="发布账号")
+    available_products: str = Field(default="", description="可用产品")
+    target_audience: str = Field(default="", description="目标人群")
+    content_style: str = Field(default="", description="内容风格")
+    product_material: str = Field(default="", description="产品材质")
+    product_selling_points: str = Field(default="", description="产品卖点")
+    suitable_scenarios: str = Field(default="", description="适合场景")
+    price_range: str = Field(default="", description="价格区间")
+    reference_copy: str = Field(default="", description="参考文案")
+    publish_account: str = Field(default="", description="发布账号")
+    purchased_product: str = Field(default="", description="购买产品")
+    purchase_reason: str = Field(default="", description="购买原因")
+    usage_scenario: str = Field(default="", description="使用场景")
+    customer_feedback: str = Field(default="", description="客户反馈")
+    content_theme: str = Field(default="", description="内容主题")
 
 
 # ============================================

@@ -5,13 +5,16 @@
 """
 
 import re
+import requests
 from typing import Literal, Dict, Any
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import HumanMessage
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
 from coze_coding_dev_sdk import LLMClient
+from coze_workload_identity import Client
 
 from graphs.state import (
     GlobalState,
@@ -26,6 +29,7 @@ from graphs.state import (
     FeishuTopicPostInput,
     FeishuTopicPostOutput,
     FeishuImageSuggestionInput,
+    FeishuWeeklyReviewInput,
 )
 
 from graphs.nodes.hot_topic_generator_node import hot_topic_generator_node
@@ -42,9 +46,9 @@ from graphs.nodes.feishu_write_node import feishu_write_node
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic", "feishu_topic_post", "feishu_customer_story", "feishu_image_suggestion"] = Field( 
+    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic", "feishu_topic_post", "feishu_customer_story", "feishu_image_suggestion", "feishu_weekly_review"] = Field( 
         ..., 
-        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)、feishu_topic_post(飞书选题文案)、feishu_customer_story(飞书客户故事)" 
+        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)、feishu_topic_post(飞书选题文案)、feishu_customer_story(飞书客户故事)、feishu_weekly_review(飞书数据复盘)" 
     )
     
     # 热点选题生成器参数
@@ -90,6 +94,10 @@ class WorkflowInput(BaseModel):
     feishu_hot_calendar_table_id: str = Field(default="tblT1KM0397UcGeM", description="热点日历表table_id")
     feishu_product_table_id: str = Field(default="tbllExTlKURFJP2j", description="产品素材表table_id")
     feishu_topic_table_id: str = Field(default="tblJNjx74uZ3s1vs", description="选题库table_id")
+    feishu_review_table_id: str = Field(default="tblfSaXuLDh6OKEq", description="数据复盘表table_id")
+    
+    # 飞书数据复盘参数
+    feishu_review_table_id: str = Field(default="tblfSaXuLDh6OKEq", description="数据复盘表table_id")
 
 
 class WorkflowOutput(BaseModel):
@@ -301,11 +309,14 @@ class FeishuWorkflowOutput(BaseModel):
     success_count: int = Field(default=0, description="成功写入数")
 
 
-def extract_feishu_field(field_value: Any) -> str:
+def extract_feishu_field(fields: dict, field_name: str) -> str:
     """
     从飞书字段值中提取文本内容
+    fields: 包含所有字段的字典
+    field_name: 要提取的字段名
     飞书字段格式通常是: [{'text': '内容', 'type': 'text'}]
     """
+    field_value = fields.get(field_name) if fields else None
     if field_value is None:
         return ""
     if isinstance(field_value, str):
@@ -359,13 +370,13 @@ def feishu_product_workflow_node(
         record_id = record.get("record_id", "")
         
         # 从飞书记录中提取产品信息，使用extract_feishu_field处理字段格式
-        product_name = extract_feishu_field(fields.get("产品名称"))
-        product_material = extract_feishu_field(fields.get("产品材质"))
-        product_selling_points = extract_feishu_field(fields.get("产品卖点"))
-        suitable_scenarios = extract_feishu_field(fields.get("适合场景"))
-        target_audience = extract_feishu_field(fields.get("目标人群"))
-        price_range = extract_feishu_field(fields.get("价格区间"))
-        reference_copy = extract_feishu_field(fields.get("参考文案"))
+        product_name = extract_feishu_field(fields, "产品名称")
+        product_material = extract_feishu_field(fields, "产品材质")
+        product_selling_points = extract_feishu_field(fields, "产品卖点")
+        suitable_scenarios = extract_feishu_field(fields, "适合场景")
+        target_audience = extract_feishu_field(fields, "目标人群")
+        price_range = extract_feishu_field(fields, "价格区间")
+        reference_copy = extract_feishu_field(fields, "参考文案")
         
         if not product_name:
             continue
@@ -480,8 +491,8 @@ def feishu_hot_topic_workflow_node(
     products = []
     for record in product_output.records:
         fields = record.get("fields", {})
-        product_name = extract_feishu_field(fields.get("产品名称"))
-        selling_point = extract_feishu_field(fields.get("核心卖点"))
+        product_name = extract_feishu_field(fields, "产品名称")
+        selling_point = extract_feishu_field(fields, "核心卖点")
         if product_name:
             products.append(f"{product_name}+{selling_point}" if selling_point else product_name)
     
@@ -498,9 +509,9 @@ def feishu_hot_topic_workflow_node(
         hot_record_id = record.get("record_id", "")
         
         # 提取热点信息
-        hot_topic_name = extract_feishu_field(fields.get("热点名称"))
-        hot_topic_date = extract_feishu_field(fields.get("热点日期"))
-        account = extract_feishu_field(fields.get("适合账号")) or state.publish_account
+        hot_topic_name = extract_feishu_field(fields, "热点名称")
+        hot_topic_date = extract_feishu_field(fields, "热点日期")
+        account = extract_feishu_field(fields, "适合账号") or state.publish_account
         
         if hot_topic_name:
             # 调用热点选题生成器
@@ -610,23 +621,23 @@ def feishu_topic_post_workflow_node(
     product_map = {}
     for p in product_output.records:
         fields = p.get("fields", {})
-        product_name = extract_feishu_field(fields.get("产品名称", ""))
+        product_name = extract_feishu_field(fields, "产品名称")
         if product_name:
             product_map[product_name] = {
-                "材质": extract_feishu_field(fields.get("材质说明", "")),
-                "卖点": extract_feishu_field(fields.get("核心卖点", "")),
-                "场景": extract_feishu_field(fields.get("使用场景", "")),
-                "价格": extract_feishu_field(fields.get("价格区间", "")),
-                "人群": extract_feishu_field(fields.get("适合人群", ""))
+                "材质": extract_feishu_field(fields, "材质说明"),
+                "卖点": extract_feishu_field(fields, "核心卖点"),
+                "场景": extract_feishu_field(fields, "使用场景"),
+                "价格": extract_feishu_field(fields, "价格区间"),
+                "人群": extract_feishu_field(fields, "适合人群")
             }
     
     # 3. 处理选题记录
     for topic_record in topic_output.records:
         topic_fields = topic_record.get("fields", {})
         topic_id = topic_record.get("record_id", "")
-        topic_title = extract_feishu_field(topic_fields.get("选题标题", ""))
-        topic_angle = extract_feishu_field(topic_fields.get("切入角度", ""))
-        account = extract_feishu_field(topic_fields.get("目标账号", "灵楠阁品牌号"))
+        topic_title = extract_feishu_field(topic_fields, "选题标题")
+        topic_angle = extract_feishu_field(topic_fields, "切入角度")
+        account = extract_feishu_field(topic_fields, "目标账号") or "灵楠阁品牌号"
         
         # 获取关联产品
         linked_products = topic_fields.get("关联产品", [])
@@ -913,8 +924,8 @@ def feishu_image_suggestion_workflow_node(
     content_record = content_records[0]
     content_fields = content_record.get("fields", {})
     content_record_id = content_record.get("record_id", "")
-    post_title = extract_feishu_field(content_fields.get("发布标题", ""))
-    content_body = extract_feishu_field(content_fields.get("正文", ""))
+    post_title = extract_feishu_field(content_fields, "发布标题")
+    content_body = extract_feishu_field(content_fields, "正文")
     
     # 2. 生成图片建议
     prompt = f"""你是小红书视觉运营和新中式审美设计顾问。
@@ -973,6 +984,149 @@ def feishu_image_suggestion_workflow_node(
             processed_count=1,
             success_count=0
         )
+
+
+# ============================================
+# 工作流⑤：飞书数据复盘
+# ============================================
+def feishu_weekly_review_workflow_node(
+    state: FeishuWeeklyReviewInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 飞书数据复盘
+    desc: 从飞书数据复盘表读取本周数据，生成分析报告和下周选题建议
+    integrations: 飞书多维表格
+    """
+    ctx = runtime.context
+    
+    # 获取访问令牌
+    client = Client()
+    access_token = client.get_integration_credential("integration-feishu-base")
+    
+    # 构建请求头
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    # 读取数据复盘表 - 不使用筛选条件，直接读取最近数据
+    search_url = f"https://open.larkoffice.com/open-apis/bitable/v1/apps/{state.feishu_app_token}/tables/{state.feishu_review_table_id}/records/search"
+    
+    # 先尝试不带筛选条件读取
+    search_body = {
+        "page_size": 10  # 只读取最近10条
+    }
+    
+    search_resp = requests.post(search_url, headers=headers, json=search_body)
+    search_data = search_resp.json()
+    
+    if search_data.get("code") != 0:
+        # 如果失败，尝试用另一种方式读取
+        list_url = f"https://open.larkoffice.com/open-apis/bitable/v1/apps/{state.feishu_app_token}/tables/{state.feishu_review_table_id}/records"
+        list_resp = requests.get(list_url, headers=headers, params={"page_size": 10})
+        search_data = list_resp.json()
+        
+        if search_data.get("code") != 0:
+            return FeishuWorkflowOutput(
+                workflow_type="feishu_weekly_review",
+                result=f"读取数据复盘表失败: {search_data.get('msg', '')}",
+                processed_count=0,
+                success_count=0
+            )
+        records = search_data.get("data", {}).get("items", [])
+    else:
+        records = search_data.get("data", {}).get("items", [])
+    
+    if not records:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_weekly_review",
+            result="没有找到待复盘的记录",
+            processed_count=0,
+            success_count=0
+        )
+    
+    # 格式化周数据
+    weekly_data_lines = []
+    for record in records:
+        fields = record.get("fields", {})
+        post_title = extract_feishu_field(fields, "发布标题")
+        account = extract_feishu_field(fields, "发布账号")
+        likes = extract_feishu_field(fields, "点赞数")
+        collects = extract_feishu_field(fields, "收藏数")
+        comments = extract_feishu_field(fields, "评论数")
+        dms = extract_feishu_field(fields, "私信数")
+        
+        weekly_data_lines.append(f"- {post_title} | {account} | 点赞{likes} 收藏{collects} 评论{comments} 私信{dms}")
+    
+    weekly_data_str = "\n".join(weekly_data_lines)
+    
+    # 调用LLM生成分析报告
+    client = LLMClient()
+    prompt = f"""你是小红书账号增长分析师。请分析以下本周数据并给出优化建议：
+
+本周数据：
+{weekly_data_str}
+
+请输出：
+1. 表现最好的3篇内容分析
+2. 表现差的内容共性问题
+3. 下周5个选题建议
+"""
+    
+    response = client.invoke(
+        messages=[HumanMessage(content=prompt)],
+        model="doubao-seed-2-0-pro-260215"
+    )
+    result = response.content if isinstance(response.content, str) else str(response.content)
+    
+    # 将分析结果写入选题库作为新的选题建议
+    # 解析LLM输出，提取选题建议
+    lines = result.split("\n")
+    topics_to_add = []
+    for line in lines:
+        if "建议" in line or "选题" in line:
+            # 提取可能的选题标题
+            clean_line = line.strip()
+            if clean_line and len(clean_line) > 5:
+                # 去除序号和前缀
+                clean_line = re.sub(r'^[\d\.\-\*]+\s*', '', clean_line)
+                if clean_line:
+                    topics_to_add.append(clean_line)
+    
+    # 写入选题库
+    if topics_to_add:
+        add_url = f"https://open.larkoffice.com/open-apis/bitable/v1/apps/{state.feishu_app_token}/tables/{state.feishu_topic_table_id}/records/batch_create"
+        records_to_add = []
+        for i, topic in enumerate(topics_to_add[:5]):  # 最多添加5个
+            records_to_add.append({
+                "fields": {
+                    "选题标题": [{"text": topic, "type": "text"}],
+                    "切入角度": [{"text": "下周选题建议", "type": "text"}],
+                    "状态": [{"text": "待审核", "type": "text"}]
+                }
+            })
+        
+        if records_to_add:
+            add_body = {"records": records_to_add}
+            add_resp = requests.post(add_url, headers=headers, json=add_body)
+            add_data = add_resp.json()
+            
+            if add_data.get("code") == 0:
+                return FeishuWorkflowOutput(
+                    workflow_type="feishu_weekly_review",
+                    result=f"✓ 数据复盘已完成，共分析{len(records)}条记录，新增{len(records_to_add)}个选题建议\n\n分析结果：\n{result}",
+                    processed_count=len(records),
+                    success_count=len(records_to_add)
+                )
+    
+    return FeishuWorkflowOutput(
+        workflow_type="feishu_weekly_review",
+        result=f"✓ 数据复盘已完成，共分析{len(records)}条记录\n\n分析结果：\n{result}",
+        processed_count=len(records),
+        success_count=1
+    )
 
 
 # ============================================
@@ -1043,6 +1197,11 @@ builder.add_node(
     feishu_image_suggestion_workflow_node,
     metadata={"type": "agent", "llm_cfg": "config/image_suggestion_cfg.json"}
 )
+builder.add_node(
+    "feishu_weekly_review",
+    feishu_weekly_review_workflow_node,
+    metadata={"type": "agent", "llm_cfg": "config/weekly_review_cfg.json"}
+)
 
 # 添加条件边作为入口
 builder.add_conditional_edges(
@@ -1058,7 +1217,8 @@ builder.add_conditional_edges(
         "feishu_hot_topic": "feishu_hot_topic",
         "feishu_topic_post": "feishu_topic_post",
         "feishu_customer_story": "feishu_customer_story",
-        "feishu_image_suggestion": "feishu_image_suggestion"
+        "feishu_image_suggestion": "feishu_image_suggestion",
+        "feishu_weekly_review": "feishu_weekly_review"
     }
 )
 
@@ -1073,6 +1233,7 @@ builder.add_edge("feishu_hot_topic", END)
 builder.add_edge("feishu_topic_post", END)
 builder.add_edge("feishu_customer_story", END)
 builder.add_edge("feishu_image_suggestion", END)
+builder.add_edge("feishu_weekly_review", END)
 
 # 编译图
 main_graph = builder.compile()

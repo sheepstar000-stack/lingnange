@@ -18,6 +18,7 @@
 | **飞书选题文案自动化** | feishu_topic_post | 从选题库读取通过的选题→生成文案→写入内容库 | 飞书app_token、选题库ID、产品表ID、内容库ID |
 | **飞书客户故事自动化** | feishu_customer_story | 手动输入客户信息→生成故事→写入内容库 | 客户背景、购买产品、购买原因、使用场景、反馈 |
 | **飞书图片建议自动化** | feishu_image_suggestion | 从内容库读取待审核内容→生成图片建议→更新内容库 | 飞书app_token、内容库ID、产品表ID |
+| **飞书数据复盘自动化** | feishu_weekly_review | 从数据复盘表读取本周数据→分析→写入选题建议 | 飞书app_token、复盘表ID、选题库ID |
 
 ## 节点清单
 
@@ -33,6 +34,7 @@
 | feishu_topic_post | `graph.py` (内联) | agent | 飞书选题文案自动化 | `config/product_post_generator_cfg.json` |
 | feishu_customer_story | `graph.py` (内联) | agent | 飞书客户故事自动化 | `config/customer_story_generator_cfg.json` |
 | feishu_image_suggestion | `graph.py` (内联) | agent | 飞书图片建议自动化 | `config/image_suggestion_cfg.json` |
+| feishu_weekly_review | `graph.py` (内联) | agent | 飞书数据复盘自动化 | - |
 | feishu_read | `nodes/feishu_read_node.py` | task | 飞书表格读取 | - |
 | feishu_write | `nodes/feishu_write_node.py` | task | 飞书表格写入 | - |
 
@@ -137,6 +139,16 @@ config/
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_content_table_id": "tblg7zZuWKcUvqQX",
   "feishu_product_table_id": "tbllExTlKURFJP2j"
+}
+```
+
+#### 数据复盘自动化
+```json
+{
+  "workflow_type": "feishu_weekly_review",
+  "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+  "feishu_review_table_id": "tblfSaXuLDh6OKEq",
+  "feishu_topic_table_id": "tblJNjx74uZ3s1vs"
 }
 ```
 
