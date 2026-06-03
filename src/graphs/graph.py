@@ -4,6 +4,7 @@
 支持飞书多维表格读取和写入（方案C）
 """
 
+import re
 from typing import Literal, Dict, Any
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
@@ -368,16 +369,43 @@ def feishu_product_workflow_node(
         )
         post_output = product_post_generator_node(post_input, config, runtime)
         
-        # 步骤3: 写入飞书内容表
+        # 解析生成的内容，提取各字段
+        generated_content = post_output.result
+        
+        # 提取第一个标题作为发布标题
+        title_match = re.search(r"1\. 种草型[：:]\s*(.+?)(?:\n|$)", generated_content)
+        publish_title = title_match.group(1).strip() if title_match else product_name
+        
+        # 提取正文
+        content_match = re.search(r"二、正文.*?\n(.+?)(?=三、|$)", generated_content, re.DOTALL)
+        content_body = content_match.group(1).strip() if content_match else generated_content[:500]
+        
+        # 提取标签
+        tags_match = re.search(r"五、15个小红书标签.*?核心标签[^\n]*\n(.+?)(?:\n|$)", generated_content, re.DOTALL)
+        tags = tags_match.group(1).strip() if tags_match else ""
+        
+        # 提取@账号
+        at_match = re.search(r"六、适合@的官方账号.*?\n(.+?)(?:\n|$)", generated_content, re.DOTALL)
+        at_accounts = at_match.group(1).strip() if at_match else ""
+        
+        # 提取评论区引导语
+        comment_match = re.search(r"七、评论区引导语.*?\n(.+?)(?:\n|$)", generated_content, re.DOTALL)
+        comment_guide = comment_match.group(1).strip() if comment_match else ""
+        
+        # 步骤3: 写入飞书内容表（使用正确的字段名）
         write_input = FeishuWriteInput(
             app_token=state.feishu_app_token,
             table_id=state.feishu_content_table_id,
             record_id="",  # 新增记录
             fields={
-                "产品名称": product_name,
-                "生成文案": post_output.result,
-                "来源记录ID": record_id,
-                "处理状态": "已生成"
+                "发布标题": publish_title,
+                "正文": content_body,
+                "内容栏目": "产品种草",  # 单选
+                "发布账号": state.publish_account,  # 单选
+                "发布标签": tags,
+                "@薯账号": at_accounts,
+                "评论区引导语": comment_guide,
+                "发布状态": "待审核"  # 单选
             }
         )
         write_output = feishu_write_node(write_input, config, runtime)
