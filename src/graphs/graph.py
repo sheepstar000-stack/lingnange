@@ -200,12 +200,15 @@ def feishu_hot_topic_workflow_node(
             
             # 调用LLM生成选题
             llm_client = LLMClient()
+            llm_config = cfg.get("config", {})
             response = llm_client.invoke(
                 messages=[
                     SystemMessage(content=sp),
                     HumanMessage(content=up)
                 ],
-                model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
+                model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
+                temperature=llm_config.get("temperature", 0.7),
+                max_completion_tokens=llm_config.get("max_completion_tokens", 4096)
             )
             topic_content = response.content if isinstance(response.content, str) else str(response.content)
             
@@ -337,12 +340,15 @@ def feishu_topic_post_workflow_node(
         )
         
         llm_client = LLMClient(ctx=ctx)
+        llm_config = cfg.get("config", {})
         response = llm_client.invoke(
             messages=[
                 SystemMessage(content=sp),
                 HumanMessage(content=up)
             ],
-            model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
+            model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
+            temperature=llm_config.get("temperature", 0.7),
+            max_completion_tokens=llm_config.get("max_completion_tokens", 4096)
         )
         
         content_result = response.content if isinstance(response.content, str) else str(response.content)
@@ -431,12 +437,15 @@ def feishu_customer_story_workflow_node(
     
     # 调用LLM
     llm_client = LLMClient()
+    llm_config = cfg.get("config", {})
     llm_result = llm_client.invoke(
         messages=[
             SystemMessage(content=sp),
             HumanMessage(content=up)
         ],
-        model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
+        model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
+        temperature=llm_config.get("temperature", 0.7),
+        max_completion_tokens=llm_config.get("max_completion_tokens", 4096)
     )
     
     content = llm_result.content if isinstance(llm_result.content, str) else str(llm_result.content)
@@ -559,12 +568,15 @@ def feishu_image_suggestion_workflow_node(
     )
     
     llm_client = LLMClient()
+    llm_config = cfg.get("config", {})
     llm_result = llm_client.invoke(
         messages=[
             SystemMessage(content=sp),
             HumanMessage(content=up)
         ],
-        model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
+        model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
+        temperature=llm_config.get("temperature", 0.7),
+        max_completion_tokens=llm_config.get("max_completion_tokens", 4096)
     )
     image_suggestion = llm_result.content if isinstance(llm_result.content, str) else str(llm_result)
     
@@ -677,12 +689,15 @@ def feishu_weekly_review_workflow_node(
     )
     
     llm_client = LLMClient()
+    llm_config = cfg.get("config", {})
     response = llm_client.invoke(
         messages=[
             SystemMessage(content=sp),
             HumanMessage(content=up)
         ],
-        model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
+        model=llm_config.get("model", "doubao-seed-2-0-pro-260215"),
+        temperature=llm_config.get("temperature", 0.7),
+        max_completion_tokens=llm_config.get("max_completion_tokens", 4096)
     )
     result = response.content if isinstance(response.content, str) else str(response.content)
     
