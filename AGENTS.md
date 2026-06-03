@@ -8,21 +8,21 @@
 
 | 工作流名称 | workflow_type | 功能描述 | 输入参数 |
 |-----------|---------------|---------|---------|
-| 飞书热点选题自动化 | feishu_hot_topic | 从热点日历+产品库读取→生成选题→写入选题库 | app_token、热点日历ID、产品表ID、选题库ID |
-| 飞书选题文案自动化 | feishu_topic_post | 从选题库读取通过的选题→生成文案→写入内容库 | app_token、选题库ID、产品表ID、内容库ID |
-| 飞书客户故事自动化 | feishu_customer_story | 手动输入客户信息→生成故事→写入内容库 | 客户背景、购买产品、购买原因、使用场景、反馈 |
-| 飞书图片建议自动化 | feishu_image_suggestion | 从内容库读取待审核内容→生成图片建议→更新内容库 | app_token、内容库ID、产品表ID |
-| 飞书数据复盘自动化 | feishu_weekly_review | 从数据复盘表读取本周数据→分析→生成选题建议 | app_token、复盘表ID、选题库ID |
+| 热点选题 | 热点选题 | 从热点日历+产品库读取→生成选题→写入选题库 | app_token、热点日历ID、产品表ID、选题库ID |
+| 选题文案 | 选题文案 | 从选题库读取通过的选题→生成文案→写入内容库 | app_token、选题库ID、产品表ID、内容库ID |
+| 客户故事 | 客户故事 | 手动输入客户信息→生成故事→写入内容库 | 客户背景、购买产品、购买原因、使用场景、反馈 |
+| 图片建议 | 图片建议 | 从内容库读取待审核内容→生成图片建议→更新内容库 | app_token、内容库ID、产品表ID |
+| 数据复盘 | 数据复盘 | 从数据复盘表读取本周数据→分析→生成选题建议 | app_token、复盘表ID、选题库ID |
 
 ## 节点清单
 
 | 节点名 | 文件位置 | 类型 | 功能描述 |
 |-------|---------|------|---------|
-| feishu_hot_topic | `graph.py` | agent | 热点选题自动化 |
-| feishu_topic_post | `graph.py` | agent | 选题文案自动化 |
-| feishu_customer_story | `graph.py` | agent | 客户故事自动化 |
-| feishu_image_suggestion | `graph.py` | agent | 图片建议自动化 |
-| feishu_weekly_review | `graph.py` | agent | 数据复盘自动化 |
+| 热点选题 | `graph.py` | agent | 热点选题自动化 |
+| 选题文案 | `graph.py` | agent | 选题文案自动化 |
+| 客户故事 | `graph.py` | agent | 客户故事自动化 |
+| 图片建议 | `graph.py` | agent | 图片建议自动化 |
+| 数据复盘 | `graph.py` | agent | 数据复盘自动化 |
 | feishu_read | `nodes/feishu_read_node.py` | task | 飞书表格读取 |
 | feishu_write | `nodes/feishu_write_node.py` | task | 飞书表格写入 |
 
@@ -44,11 +44,11 @@ src/graphs/
 
 | 配置文件 | 对应工作流 | 说明 |
 |---------|-----------|------|
-| config/feishu_hot_topic_cfg.json | feishu_hot_topic | 热点选题生成器提示词 |
-| config/feishu_topic_post_cfg.json | feishu_topic_post | 产品文案生成器提示词 |
-| config/feishu_customer_story_cfg.json | feishu_customer_story | 客户故事生成器提示词 |
-| config/feishu_image_suggestion_cfg.json | feishu_image_suggestion | 图片建议生成器提示词 |
-| config/feishu_weekly_review_cfg.json | feishu_weekly_review | 数据复盘分析提示词 |
+| config/feishu_hot_topic_cfg.json | 热点选题 | 热点选题生成器提示词 |
+| config/feishu_topic_post_cfg.json | 选题文案 | 产品文案生成器提示词 |
+| config/feishu_customer_story_cfg.json | 客户故事 | 客户故事生成器提示词 |
+| config/feishu_image_suggestion_cfg.json | 图片建议 | 图片建议生成器提示词 |
+| config/feishu_weekly_review_cfg.json | 数据复盘 | 数据复盘分析提示词 |
 
 每个配置文件包含：
 - `config`: 模型配置（model、temperature等）
@@ -59,20 +59,20 @@ src/graphs/
 
 | 节点 | 使用的技能 | 说明 |
 |-----|-----------|------|
-| feishu_hot_topic | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
-| feishu_topic_post | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
-| feishu_customer_story | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
-| feishu_image_suggestion | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
-| feishu_weekly_review | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
+| 热点选题 | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
+| 选题文案 | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
+| 客户故事 | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
+| 图片建议 | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
+| 数据复盘 | 大语言模型 + 飞书多维表格 | doubao-seed-2-0-pro-260215 |
 | feishu_read | 飞书多维表格 | 读取飞书表格数据 |
 | feishu_write | 飞书多维表格 | 写入飞书表格数据 |
 
 ## 调用示例
 
-### 1. 热点选题自动化
+### 1. 热点选题
 ```json
 {
-  "workflow_type": "feishu_hot_topic",
+  "workflow_type": "热点选题",
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_hot_calendar_table_id": "tblT1KM0397UcGeM",
   "feishu_product_table_id": "tbllExTlKURFJP2j",
@@ -82,10 +82,10 @@ src/graphs/
 }
 ```
 
-### 2. 选题文案自动化
+### 2. 选题文案
 ```json
 {
-  "workflow_type": "feishu_topic_post",
+  "workflow_type": "选题文案",
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_topic_table_id": "tblJNjx74uZ3s1vs",
   "feishu_product_table_id": "tbllExTlKURFJP2j",
@@ -94,10 +94,10 @@ src/graphs/
 }
 ```
 
-### 3. 客户故事自动化
+### 3. 客户故事
 ```json
 {
-  "workflow_type": "feishu_customer_story",
+  "workflow_type": "客户故事",
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_content_table_id": "tblg7zZuWKcUvqQX",
   "customer_background": "30岁设计师",
@@ -108,20 +108,20 @@ src/graphs/
 }
 ```
 
-### 4. 图片建议自动化
+### 4. 图片建议
 ```json
 {
-  "workflow_type": "feishu_image_suggestion",
+  "workflow_type": "图片建议",
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_content_table_id": "tblg7zZuWKcUvqQX",
   "feishu_product_table_id": "tbllExTlKURFJP2j"
 }
 ```
 
-### 5. 数据复盘自动化
+### 5. 数据复盘
 ```json
 {
-  "workflow_type": "feishu_weekly_review",
+  "workflow_type": "数据复盘",
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_review_table_id": "tblfSaXuLDh6OKEq",
   "feishu_topic_table_id": "tblJNjx74uZ3s1vs"
@@ -134,7 +134,7 @@ src/graphs/
 
 ```json
 {
-  "workflow_type": "feishu_xxx",
+  "workflow_type": "热点选题",
   "result": "执行结果描述",
   "processed_count": 1,
   "success_count": 1
