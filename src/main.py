@@ -260,24 +260,29 @@ async_graph: Optional[CompiledStateGraph] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global async_graph, async_runtime
     engine = get_engine()
-    @event.listens_for(engine, "connect")
-    def _set_utc(dbapi_conn, _):
-        with dbapi_conn.cursor() as cur:
-            cur.execute("SET TIME ZONE 'UTC'")
+    if engine is not None:
+        @event.listens_for(engine, "connect")
+        def _set_utc(dbapi_conn, _):
+            with dbapi_conn.cursor() as cur:
+                cur.execute("SET TIME ZONE 'UTC'")
     checkpointer = get_memory_saver()
     if graph_helper.is_agent_proj():
         base = graph_helper.get_agent_instance("agents.agent", None)
     else:
         base = graph_helper.get_graph_instance("graphs.graph")
     sync_graph = base.builder.compile()
-    global async_graph, async_runtime
     async_graph = base.builder.compile(checkpointer=checkpointer)
     service.set_graph(sync_graph)
-    async_runtime = AsyncTaskRuntime(
-        session_factory=get_session, engine=engine,
-        graph=async_graph, checkpointer=checkpointer,
-    )
+    if engine is not None:
+        async_runtime = AsyncTaskRuntime(
+            session_factory=get_session, engine=engine,
+            graph=async_graph, checkpointer=checkpointer,
+        )
+    else:
+        logger.warning("数据库未配置，异步任务 (/async_run, /task) 不可用")
+        async_runtime = None
     yield
     if async_runtime is not None:
         await async_runtime.shutdown()
@@ -290,6 +295,8 @@ openai_handler = OpenAIChatHandler(service)
 
 @app.post("/async_run")
 async def http_async_run(request: Request) -> dict:
+    if async_runtime is None:
+        raise HTTPException(status_code=503, detail="数据库未配置，异步任务不可用")
     try:
         payload = await request.json()
     except json.JSONDecodeError as e:
@@ -332,6 +339,8 @@ async def http_async_run(request: Request) -> dict:
 
 @app.get("/task/{task_id}")
 async def http_get_task(task_id: str) -> dict:
+    if async_runtime is None:
+        raise HTTPException(status_code=503, detail="数据库未配置，异步任务不可用")
     try:
         row = await async_runtime.get(task_id)
     except AsyncTaskStorageError as e:

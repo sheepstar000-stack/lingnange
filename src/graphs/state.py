@@ -30,6 +30,7 @@ class FeishuReadOutput(BaseModel):
     """飞书读取节点输出"""
     records: list = Field(default=[], description="读取到的记录列表")
     record_count: int = Field(default=0, description="记录数量")
+    error: str = Field(default="", description="错误信息（空字符串表示正常）")
 
 
 class FeishuWriteInput(BaseModel):

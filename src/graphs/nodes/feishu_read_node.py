@@ -122,7 +122,10 @@ def feishu_read_node(
             record_count=len(items)
         )
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"飞书读取失败 [{state.table_id}]: {e}")
         return FeishuReadOutput(
             records=[],
-            record_count=0
+            record_count=0,
+            error=str(e)
         )

@@ -1,5 +1,6 @@
 import os
 import time
+from typing import Optional
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import OperationalError
@@ -14,10 +15,10 @@ try:
 except Exception:
     pass
 
-def get_db_url() -> str:
-    """Build database URL from environment."""
+def get_db_url() -> Optional[str]:
+    """Build database URL from environment. Returns None if not configured."""
     url = os.getenv("PGDATABASE_URL") or ""
-    if url is not None and url != "":
+    if url:
         return url
     from coze_workload_identity import Client
     try:
@@ -26,23 +27,19 @@ def get_db_url() -> str:
         client.close()
         for env_var in env_vars:
             if env_var.key == "PGDATABASE_URL":
-                url = env_var.value.replace("'", "'\\''")
-                return url
+                return env_var.value
     except Exception as e:
-        logger.error(f"Error loading PGDATABASE_URL: {e}")
-        raise e
-    finally:
-        if url is None or url == "":
-            logger.error("PGDATABASE_URL is not set")
-    return url
+        logger.warning(f"PGDATABASE_URL 未配置 (Coze workload identity 获取失败): {e}")
+    logger.info("PGDATABASE_URL 未配置，将跳过数据库（无异步任务/无持久化检查点）")
+    return None
 _engine = None
 _SessionLocal = None
 
 def _create_engine_with_retry():
     url = get_db_url()
-    if url is None or url == "":
-        logger.error("PGDATABASE_URL is not set")
-        raise ValueError("PGDATABASE_URL is not set")
+    if not url:
+        logger.info("无 PGDATABASE_URL，数据库未初始化")
+        return None
     size = 100
     overflow = 100
     recycle = 1800
@@ -79,12 +76,18 @@ def get_engine():
 
 def get_sessionmaker():
     global _SessionLocal
+    engine = get_engine()
+    if engine is None:
+        return None
     if _SessionLocal is None:
-        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=get_engine())
+        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     return _SessionLocal
 
 def get_session():
-    return get_sessionmaker()()
+    sm = get_sessionmaker()
+    if sm is None:
+        return None
+    return sm()
 
 __all__ = [
     "get_db_url",
