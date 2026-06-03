@@ -40,6 +40,21 @@ src/graphs/
     └── feishu_write_node.py    # 飞书表格写入节点
 ```
 
+## 配置文件
+
+| 配置文件 | 对应工作流 | 说明 |
+|---------|-----------|------|
+| config/feishu_hot_topic_cfg.json | feishu_hot_topic | 热点选题生成器提示词 |
+| config/feishu_topic_post_cfg.json | feishu_topic_post | 产品文案生成器提示词 |
+| config/feishu_customer_story_cfg.json | feishu_customer_story | 客户故事生成器提示词 |
+| config/feishu_image_suggestion_cfg.json | feishu_image_suggestion | 图片建议生成器提示词 |
+| config/feishu_weekly_review_cfg.json | feishu_weekly_review | 数据复盘分析提示词 |
+
+每个配置文件包含：
+- `config`: 模型配置（model、temperature等）
+- `sp`: 系统提示词（角色定义、任务目标、约束规则）
+- `up`: 用户提示词模板（使用jinja2变量）
+
 ## 技能使用
 
 | 节点 | 使用的技能 | 说明 |

@@ -31,6 +31,16 @@ from graphs.nodes.feishu_write_node import feishu_write_node
 
 
 # ============================================
+# 配置加载辅助函数
+# ============================================
+def load_llm_config(config_path: str) -> Dict[str, Any]:
+    """加载LLM配置文件"""
+    full_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH", ""), config_path)
+    with open(full_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+# ============================================
 # 统一入参定义
 # ============================================
 class WorkflowInput(BaseModel):
@@ -173,33 +183,29 @@ def feishu_hot_topic_workflow_node(
         account = extract_feishu_field(fields, "适合账号") or state.publish_account
         
         if hot_topic_name:
-            # 调用LLM生成选题
-            prompt = f"""你是小红书内容运营专家。请为以下热点生成10个选题方案：
-
-热点名称：{hot_topic_name}
-热点日期：{hot_topic_date}
-可用产品：{available_products}
-目标人群：{state.target_audience}
-内容风格：{state.content_style}
-发布账号：{account}
-
-请输出：
-一、10个选题标题（每个不超过15字）
-二、每个选题的切入角度（50字内）
-三、推荐产品匹配
-四、封面文案建议
-五、标签建议
-
-要求：
-1. 结合金丝楠木/古典家具产品特点
-2. 新中式审美，克制不夸张
-3. 避免玄学承诺（禁止招财、转运等）
-"""
+            # 加载配置文件
+            cfg = load_llm_config("config/feishu_hot_topic_cfg.json")
+            sp = cfg.get("sp", "")
+            up_template = cfg.get("up", "")
             
+            # 渲染用户提示词
+            up = Template(up_template).render(
+                hot_topic_name=hot_topic_name,
+                hot_topic_date=hot_topic_date,
+                available_products=available_products,
+                target_audience=state.target_audience,
+                content_style=state.content_style,
+                account=account
+            )
+            
+            # 调用LLM生成选题
             llm_client = LLMClient()
             response = llm_client.invoke(
-                messages=[HumanMessage(content=prompt)],
-                model="doubao-seed-2-0-pro-260215"
+                messages=[
+                    SystemMessage(content=sp),
+                    HumanMessage(content=up)
+                ],
+                model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
             )
             topic_content = response.content if isinstance(response.content, str) else str(response.content)
             
@@ -319,32 +325,24 @@ def feishu_topic_post_workflow_node(
         if not product_info:
             product_info = "金丝楠木手串，温润细腻，适合日常佩戴"
         
-        # 4. 调用LLM生成文案
-        prompt = f"""你是小红书产品文案专家。请为以下产品生成完整的小红书笔记：
-
-{topic_angle}
-
-产品信息：{product_info}
-发布账号：{account}
-
-请输出：
-一、标题（3种类型：种草型、痛点型、故事型）
-二、正文（300-500字）
-三、封面文案（不超过10字）
-四、标签（15个）
-五、适合@的官方账号
-六、评论区引导语
-
-要求：
-1. 新中式审美，克制不夸张
-2. 禁止玄学承诺
-3. 引导用户评论或私信
-"""
+        # 4. 加载配置并调用LLM生成文案
+        cfg = load_llm_config("config/feishu_topic_post_cfg.json")
+        sp = cfg.get("sp", "")
+        up_template = cfg.get("up", "")
+        
+        up = Template(up_template).render(
+            topic_angle=topic_angle,
+            product_info=product_info,
+            account=account
+        )
         
         llm_client = LLMClient(ctx=ctx)
         response = llm_client.invoke(
-            messages=[HumanMessage(content=prompt)],
-            model="doubao-seed-2-0-pro-260215"
+            messages=[
+                SystemMessage(content=sp),
+                HumanMessage(content=up)
+            ],
+            model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
         )
         
         content_result = response.content if isinstance(response.content, str) else str(response.content)
@@ -416,41 +414,29 @@ def feishu_customer_story_workflow_node(
     """
     results = []
     
-    # 构建提示词
-    prompt = f"""你是小红书客户故事文案专家，擅长把真实购买经历写成有审美、有情绪、有文化感的内容。
-
-请根据以下信息写一篇客户故事型小红书笔记：
-客户背景：{state.customer_background}
-购买产品：{state.purchased_product}
-购买原因：{state.purchase_reason}
-使用场景：{state.usage_scenario}
-客户反馈：{state.customer_feedback}
-发布账号：{state.account}
-
-请输出：
-一、5个标题（不同类型：情绪型、故事型、产品亮点型、文化型、反转型）
-二、正文（400-700字）
-结构要求：
-- 开头：客户的一句话/一个场景（制造代入感）
-- 中段：为什么买、怎么选的、收到后的感受（故事线）
-- 转折：产品给生活带来的小变化（不是奇迹，是真实细节）
-- 结尾：自然引导评论或私信
-三、封面文案（不超过10字）
-四、8-12个标签
-五、评论区互动问题（2-3个）
-
-要求：
-- 故事真实、克制、动人，不要夸张
-- 突出产品外观、材质、文化气息、陪伴感、仪式感
-- 不要写成玄学承诺（禁止：招财、转运、辟邪、改命）
-"""
+    # 加载配置文件
+    cfg = load_llm_config("config/feishu_customer_story_cfg.json")
+    sp = cfg.get("sp", "")
+    up_template = cfg.get("up", "")
+    
+    # 渲染用户提示词
+    up = Template(up_template).render(
+        customer_background=state.customer_background,
+        purchased_product=state.purchased_product,
+        purchase_reason=state.purchase_reason,
+        usage_scenario=state.usage_scenario,
+        customer_feedback=state.customer_feedback,
+        account=state.account
+    )
     
     # 调用LLM
     llm_client = LLMClient()
     llm_result = llm_client.invoke(
-        messages=[HumanMessage(content=prompt)],
-        model="doubao-seed-2-0-pro-260215",
-        temperature=0.7
+        messages=[
+            SystemMessage(content=sp),
+            HumanMessage(content=up)
+        ],
+        model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
     )
     
     content = llm_result.content if isinstance(llm_result.content, str) else str(llm_result.content)
@@ -562,31 +548,23 @@ def feishu_image_suggestion_workflow_node(
     post_title = extract_feishu_field(content_fields, "发布标题")
     content_body = extract_feishu_field(content_fields, "正文")
     
-    # 2. 生成图片建议
-    prompt = f"""你是小红书视觉运营和新中式审美设计顾问。
-请为以下内容设计图片发布方案：
-
-内容标题：{post_title}
-
-请输出：
-一、封面图建议
-1. 推荐哪种图做封面
-2. 封面主标题3个（每个不超过12字）
-
-二、多图笔记图片顺序（1-9编号）
-
-三、每张图的修图方向
-
-四、是否需要补拍
-
-五、AI生图提示词（3个）
-"""
+    # 2. 加载配置并生成图片建议
+    cfg = load_llm_config("config/feishu_image_suggestion_cfg.json")
+    sp = cfg.get("sp", "")
+    up_template = cfg.get("up", "")
+    
+    up = Template(up_template).render(
+        post_title=post_title,
+        content_summary=content_body[:200] if content_body else ""
+    )
     
     llm_client = LLMClient()
     llm_result = llm_client.invoke(
-        messages=[HumanMessage(content=prompt)],
-        model="doubao-seed-2-0-pro-260215",
-        temperature=0.7
+        messages=[
+            SystemMessage(content=sp),
+            HumanMessage(content=up)
+        ],
+        model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
     )
     image_suggestion = llm_result.content if isinstance(llm_result.content, str) else str(llm_result)
     
@@ -689,22 +667,22 @@ def feishu_weekly_review_workflow_node(
     
     weekly_data_str = "\n".join(weekly_data_lines)
     
-    # 调用LLM生成分析报告
-    client = LLMClient()
-    prompt = f"""你是小红书账号增长分析师。请分析以下本周数据并给出优化建议：
-
-本周数据：
-{weekly_data_str}
-
-请输出：
-1. 表现最好的3篇内容分析
-2. 表现差的内容共性问题
-3. 下周5个选题建议
-"""
+    # 加载配置并调用LLM生成分析报告
+    cfg = load_llm_config("config/feishu_weekly_review_cfg.json")
+    sp = cfg.get("sp", "")
+    up_template = cfg.get("up", "")
     
-    response = client.invoke(
-        messages=[HumanMessage(content=prompt)],
-        model="doubao-seed-2-0-pro-260215"
+    up = Template(up_template).render(
+        weekly_data=weekly_data_str
+    )
+    
+    llm_client = LLMClient()
+    response = llm_client.invoke(
+        messages=[
+            SystemMessage(content=sp),
+            HumanMessage(content=up)
+        ],
+        model=cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215")
     )
     result = response.content if isinstance(response.content, str) else str(response.content)
     
