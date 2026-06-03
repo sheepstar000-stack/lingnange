@@ -1,9 +1,10 @@
 """
 小红书内容生成系统 - 主图编排
 包含5个独立的工作流，可通过workflow_type参数选择调用
+支持飞书多维表格读取和写入（方案C）
 """
 
-from typing import Literal
+from typing import Literal, Dict, Any
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
@@ -17,6 +18,8 @@ from graphs.state import (
     CustomerStoryInput,
     ImageSuggestionInput,
     WeeklyReviewInput,
+    FeishuReadInput,
+    FeishuWriteInput,
 )
 
 from graphs.nodes.hot_topic_generator_node import hot_topic_generator_node
@@ -24,6 +27,8 @@ from graphs.nodes.product_post_generator_node import product_post_generator_node
 from graphs.nodes.customer_story_generator_node import customer_story_generator_node
 from graphs.nodes.image_suggestion_node import image_suggestion_node
 from graphs.nodes.weekly_review_node import weekly_review_node
+from graphs.nodes.feishu_read_node import feishu_read_node
+from graphs.nodes.feishu_write_node import feishu_write_node
 
 
 # ============================================
@@ -31,9 +36,9 @@ from graphs.nodes.weekly_review_node import weekly_review_node
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review"] = Field(
+    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product"] = Field(
         ..., 
-        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)"
+        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案自动生成)"
     )
     
     # 热点选题生成器参数
@@ -67,6 +72,13 @@ class WorkflowInput(BaseModel):
     # 数据复盘器参数
     weekly_data: str = Field(default="", description="本周数据")
     last_week_data: str = Field(default="", description="上周数据")
+    
+    # 飞书集成参数（方案C）
+    feishu_app_token: str = Field(default="", description="飞书多维表格的app_token")
+    feishu_table_id: str = Field(default="", description="飞书产品数据表的table_id")
+    feishu_content_table_id: str = Field(default="", description="飞书内容输出表的table_id")
+    feishu_filter_field: str = Field(default="处理状态", description="飞书筛选字段名")
+    feishu_filter_value: str = Field(default="待处理", description="飞书筛选字段值")
 
 
 class WorkflowOutput(BaseModel):
@@ -103,6 +115,12 @@ class EntryNodeInput(BaseModel):
     content_theme: str = Field(default="", description="内容主题")
     weekly_data: str = Field(default="", description="本周数据")
     last_week_data: str = Field(default="", description="上周数据")
+    # 飞书参数
+    feishu_app_token: str = Field(default="", description="飞书app_token")
+    feishu_table_id: str = Field(default="", description="飞书产品表table_id")
+    feishu_content_table_id: str = Field(default="", description="飞书内容表table_id")
+    feishu_filter_field: str = Field(default="处理状态", description="飞书筛选字段")
+    feishu_filter_value: str = Field(default="待处理", description="飞书筛选值")
 
 
 class EntryNodeOutput(BaseModel):
@@ -248,6 +266,117 @@ def weekly_review_entry_node(
 
 
 # ============================================
+# 飞书集成工作流节点（方案C：读取→生成→写入）
+# ============================================
+class FeishuWorkflowInput(BaseModel):
+    """飞书工作流输入"""
+    feishu_app_token: str = Field(default="", description="飞书app_token")
+    feishu_table_id: str = Field(default="", description="飞书产品表table_id")
+    feishu_content_table_id: str = Field(default="", description="飞书内容表table_id")
+    feishu_filter_field: str = Field(default="处理状态", description="飞书筛选字段")
+    feishu_filter_value: str = Field(default="待处理", description="飞书筛选值")
+    publish_account: str = Field(default="", description="发布账号")
+
+
+class FeishuWorkflowOutput(BaseModel):
+    """飞书工作流输出"""
+    workflow_type: str = Field(..., description="工作流类型")
+    result: str = Field(..., description="处理结果")
+    processed_count: int = Field(default=0, description="处理记录数")
+    success_count: int = Field(default=0, description="成功写入数")
+
+
+def feishu_product_workflow_node(
+    state: FeishuWorkflowInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 飞书产品文案自动生成
+    desc: 从飞书产品库读取产品信息，自动生成小红书文案，并写入飞书内容表
+    integrations: 大语言模型, 飞书多维表格
+    """
+    ctx = runtime.context
+    
+    # 步骤1: 从飞书读取待处理产品
+    read_input = FeishuReadInput(
+        app_token=state.feishu_app_token,
+        table_id=state.feishu_table_id,
+        filter_field=state.feishu_filter_field,
+        filter_value=state.feishu_filter_value
+    )
+    read_output = feishu_read_node(read_input, config, runtime)
+    
+    if read_output.record_count == 0:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_product",
+            result="没有找到待处理的记录",
+            processed_count=0,
+            success_count=0
+        )
+    
+    # 步骤2: 遍历记录生成文案
+    success_count = 0
+    results = []
+    
+    for record in read_output.records:
+        fields = record.get("fields", {})
+        record_id = record.get("record_id", "")
+        
+        # 从飞书记录中提取产品信息（字段名需与你的飞书表格一致）
+        product_name = fields.get("产品名称", "")
+        product_material = fields.get("产品材质", "")
+        product_selling_points = fields.get("产品卖点", "")
+        suitable_scenarios = fields.get("适合场景", "")
+        target_audience = fields.get("目标人群", "")
+        price_range = fields.get("价格区间", "")
+        reference_copy = fields.get("参考文案", "")
+        
+        if not product_name:
+            continue
+        
+        # 调用产品文案生成器
+        post_input = ProductPostInput(
+            product_name=product_name,
+            product_material=product_material,
+            product_selling_points=product_selling_points,
+            suitable_scenarios=suitable_scenarios,
+            target_audience=target_audience,
+            price_range=price_range,
+            reference_copy=reference_copy,
+            publish_account=state.publish_account
+        )
+        post_output = product_post_generator_node(post_input, config, runtime)
+        
+        # 步骤3: 写入飞书内容表
+        write_input = FeishuWriteInput(
+            app_token=state.feishu_app_token,
+            table_id=state.feishu_content_table_id,
+            record_id="",  # 新增记录
+            fields={
+                "产品名称": product_name,
+                "生成文案": post_output.result,
+                "来源记录ID": record_id,
+                "处理状态": "已生成"
+            }
+        )
+        write_output = feishu_write_node(write_input, config, runtime)
+        
+        if write_output.success:
+            success_count += 1
+            results.append(f"✓ {product_name} 文案已生成并写入")
+        else:
+            results.append(f"✗ {product_name} 写入失败: {write_output.message}")
+    
+    return FeishuWorkflowOutput(
+        workflow_type="feishu_product",
+        result="\n".join(results),
+        processed_count=read_output.record_count,
+        success_count=success_count
+    )
+
+
+# ============================================
 # 条件路由函数
 # ============================================
 def route_workflow(state: EntryNodeInput) -> str:
@@ -290,6 +419,11 @@ builder.add_node(
     weekly_review_entry_node,
     metadata={"type": "agent", "llm_cfg": "config/weekly_review_cfg.json"}
 )
+builder.add_node(
+    "feishu_product",
+    feishu_product_workflow_node,
+    metadata={"type": "agent", "llm_cfg": "config/product_post_generator_cfg.json"}
+)
 
 # 添加条件边作为入口
 builder.add_conditional_edges(
@@ -300,7 +434,8 @@ builder.add_conditional_edges(
         "product_post": "product_post",
         "customer_story": "customer_story",
         "image_suggestion": "image_suggestion",
-        "weekly_review": "weekly_review"
+        "weekly_review": "weekly_review",
+        "feishu_product": "feishu_product"
     }
 )
 
@@ -310,6 +445,7 @@ builder.add_edge("product_post", END)
 builder.add_edge("customer_story", END)
 builder.add_edge("image_suggestion", END)
 builder.add_edge("weekly_review", END)
+builder.add_edge("feishu_product", END)
 
 # 编译图
 main_graph = builder.compile()

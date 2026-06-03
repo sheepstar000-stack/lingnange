@@ -1,10 +1,50 @@
 """
 小红书内容生成系统 - 状态定义
 包含5个工作流的独立输入输出状态定义
+支持飞书多维表格读取和写入
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
+
+
+# ============================================
+# 飞书多维表格配置
+# ============================================
+class FeishuConfig(BaseModel):
+    """飞书多维表格配置"""
+    app_token: str = Field(..., description="多维表格的app_token")
+    table_id: str = Field(..., description="数据表的table_id")
+    view_id: Optional[str] = Field(default="", description="视图ID（可选）")
+
+
+class FeishuReadInput(BaseModel):
+    """飞书读取节点输入"""
+    app_token: str = Field(..., description="多维表格的app_token")
+    table_id: str = Field(..., description="数据表的table_id")
+    filter_field: str = Field(default="处理状态", description="筛选字段名")
+    filter_value: str = Field(default="待处理", description="筛选字段值")
+
+
+class FeishuReadOutput(BaseModel):
+    """飞书读取节点输出"""
+    records: list = Field(default=[], description="读取到的记录列表")
+    record_count: int = Field(default=0, description="记录数量")
+
+
+class FeishuWriteInput(BaseModel):
+    """飞书写入节点输入"""
+    app_token: str = Field(..., description="多维表格的app_token")
+    table_id: str = Field(..., description="数据表的table_id")
+    record_id: Optional[str] = Field(default="", description="要更新的记录ID（可选，不填则新增）")
+    fields: Dict[str, Any] = Field(default={}, description="要写入的字段数据")
+
+
+class FeishuWriteOutput(BaseModel):
+    """飞书写入节点输出"""
+    success: bool = Field(..., description="是否写入成功")
+    record_id: str = Field(default="", description="写入的记录ID")
+    message: str = Field(default="", description="操作结果消息")
 
 
 # ============================================
