@@ -22,6 +22,8 @@ from graphs.state import (
     FeishuReadInput,
     FeishuWriteInput,
     FeishuHotTopicInput,
+    FeishuTopicPostInput,
+    FeishuTopicPostOutput,
 )
 
 from graphs.nodes.hot_topic_generator_node import hot_topic_generator_node
@@ -38,9 +40,9 @@ from graphs.nodes.feishu_write_node import feishu_write_node
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic"] = Field(
+    workflow_type: Literal["hot_topic", "product_post", "customer_story", "image_suggestion", "weekly_review", "feishu_product", "feishu_hot_topic", "feishu_topic_post"] = Field(
         ..., 
-        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)"
+        description="工作流类型：hot_topic(热点选题)、product_post(产品文案)、customer_story(客户故事)、image_suggestion(图片建议)、weekly_review(数据复盘)、feishu_product(飞书产品文案)、feishu_hot_topic(飞书热点选题)、feishu_topic_post(飞书选题文案)"
     )
     
     # 热点选题生成器参数
@@ -540,6 +542,189 @@ def feishu_hot_topic_workflow_node(
 
 
 # ============================================
+# 工作流②：产品文案生成器（飞书版）
+# 读取选题库 → 读取产品素材库 → 生成文案 → 写入内容成品库
+# ============================================
+def feishu_topic_post_workflow_node(
+    state: FeishuTopicPostInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuTopicPostOutput:
+    """
+    title: 飞书产品文案工作流
+    desc: 从选题库读取通过的选题→读取产品素材→生成文案→写入内容库
+    integrations: 飞书多维表格, 大语言模型
+    """
+    import os
+    import json
+    import re
+    from jinja2 import Template
+    from cozeloop.decorator import observe
+    from coze_coding_dev_sdk import LLMClient
+    
+    ctx = runtime.context
+    
+    # 读取LLM配置
+    cfg_file = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/product_post_generator_cfg.json")
+    with open(cfg_file, 'r', encoding='utf-8') as fd:
+        llm_cfg = json.load(fd)
+    
+    app_token = state.feishu_app_token
+    topic_table_id = state.feishu_topic_table_id
+    product_table_id = state.feishu_product_table_id
+    content_table_id = state.feishu_content_table_id
+    filter_status = getattr(state, 'filter_status', '通过') or '通过'
+    
+    results = []
+    success_count = 0
+    
+    # 1. 读取选题库（筛选：选题状态 = "通过"）
+    topic_input = FeishuReadInput(
+        app_token=app_token,
+        table_id=topic_table_id,
+        filter_field="选题状态",
+        filter_value=filter_status,
+        page_size=1  # 只取一条
+    )
+    topic_output = feishu_read_node(topic_input, config, runtime)
+    
+    if not topic_output.records:
+        return FeishuWorkflowOutput(
+            workflow_type="feishu_topic_post",
+            result="没有找到待处理的选题记录"
+        )
+    
+    # 2. 读取产品素材库（获取所有可发布产品）
+    product_input = FeishuReadInput(
+        app_token=app_token,
+        table_id=product_table_id,
+        filter_field="",
+        filter_value="",
+        page_size=20
+    )
+    product_output = feishu_read_node(product_input, config, runtime)
+    
+    # 构建产品信息映射
+    product_map = {}
+    for p in product_output.records:
+        fields = p.get("fields", {})
+        product_name = extract_feishu_field(fields.get("产品名称", ""))
+        if product_name:
+            product_map[product_name] = {
+                "材质": extract_feishu_field(fields.get("材质说明", "")),
+                "卖点": extract_feishu_field(fields.get("核心卖点", "")),
+                "场景": extract_feishu_field(fields.get("使用场景", "")),
+                "价格": extract_feishu_field(fields.get("价格区间", "")),
+                "人群": extract_feishu_field(fields.get("适合人群", ""))
+            }
+    
+    # 3. 处理选题记录
+    for topic_record in topic_output.records:
+        topic_fields = topic_record.get("fields", {})
+        topic_id = topic_record.get("record_id", "")
+        topic_title = extract_feishu_field(topic_fields.get("选题标题", ""))
+        topic_angle = extract_feishu_field(topic_fields.get("切入角度", ""))
+        account = extract_feishu_field(topic_fields.get("目标账号", "灵楠阁品牌号"))
+        
+        # 获取关联产品
+        linked_products = topic_fields.get("关联产品", [])
+        product_info = ""
+        if linked_products and isinstance(linked_products, list):
+            for lp in linked_products:
+                if isinstance(lp, dict):
+                    prod_name = lp.get("text", "")
+                    if prod_name in product_map:
+                        p = product_map[prod_name]
+                        product_info = f"{prod_name}，材质：{p['材质']}，卖点：{p['卖点']}，场景：{p['场景']}"
+                        break
+        
+        if not product_info:
+            product_info = "金丝楠木手串，温润细腻，适合日常佩戴"
+        
+        # 4. 调用LLM生成文案
+        user_prompt = f"""产品名称：{product_info.split('，')[0] if '，' in product_info else product_info}
+产品材质：{product_map.get(product_info.split('，')[0], {}).get('材质', '金丝楠木')}
+产品卖点：{product_map.get(product_info.split('，')[0], {}).get('卖点', '温润细腻，越戴越亮')}
+适合场景：{product_map.get(product_info.split('，')[0], {}).get('场景', '日常佩戴')}
+目标人群：{product_map.get(product_info.split('，')[0], {}).get('人群', '25-45岁喜欢传统文化的人群')}
+价格区间：{product_map.get(product_info.split('，')[0], {}).get('价格', '500-2000元')}
+参考文案：{topic_angle}
+发布账号：{account}"""
+        
+        sp = llm_cfg.get("sp", "")
+        up_tpl = Template(llm_cfg.get("up", ""))
+        user_prompt_content = up_tpl.render({
+            "product_name": product_info.split('，')[0] if '，' in product_info else product_info,
+            "product_material": product_map.get(product_info.split('，')[0], {}).get('材质', '金丝楠木'),
+            "product_selling_points": product_map.get(product_info.split('，')[0], {}).get('卖点', ''),
+            "suitable_scenarios": product_map.get(product_info.split('，')[0], {}).get('场景', ''),
+            "target_audience": product_map.get(product_info.split('，')[0], {}).get('人群', ''),
+            "price_range": product_map.get(product_info.split('，')[0], {}).get('价格', ''),
+            "reference_copy": topic_angle,
+            "publish_account": account
+        })
+        
+        llm_client = LLMClient(ctx=ctx)
+        from langchain_core.messages import SystemMessage, HumanMessage
+        messages = [
+            SystemMessage(content=sp),
+            HumanMessage(content=user_prompt_content)
+        ]
+        response = llm_client.invoke(
+            messages=messages,
+            model="doubao-seed-2-0-pro-260215"
+        )
+        
+        content_result = response.content if hasattr(response, 'content') else str(response)
+        
+        # 解析文案内容
+        title_match = re.search(r'1\.\s*种草型[：:]\s*(.+)', content_result)
+        post_title = title_match.group(1).strip() if title_match else topic_title
+        
+        body_match = re.search(r'二、正文[^\n]*\n(.+?)(?=\n三、)', content_result, re.DOTALL)
+        post_body = body_match.group(1).strip() if body_match else content_result[:500]
+        
+        tags_match = re.search(r'五、15个小红书标签[^\n]*\n(.+?)(?=\n六、)', content_result, re.DOTALL)
+        post_tags = tags_match.group(1).strip() if tags_match else ""
+        
+        at_match = re.search(r'六、适合@的官方账号[^\n]*\n(.+?)(?=\n七、)', content_result, re.DOTALL)
+        at_accounts = at_match.group(1).strip() if at_match else ""
+        
+        comment_match = re.search(r'七、评论区引导语[^\n]*\n(.+?)(?=\n八、)', content_result, re.DOTALL)
+        comment_guide = comment_match.group(1).strip() if comment_match else ""
+        
+        # 5. 写入内容成品库
+        write_input = FeishuWriteInput(
+            app_token=app_token,
+            table_id=content_table_id,
+            fields={
+                "发布标题": post_title,
+                "正文": post_body,
+                "内容栏目": "产品种草",
+                "发布账号": account,
+                "发布标签": post_tags,
+                "@薯账号": at_accounts,
+                "评论区引导语": comment_guide,
+                "发布状态": "待审核"
+            }
+        )
+        write_output = feishu_write_node(write_input, config, runtime)
+        
+        if write_output.success:
+            success_count += 1
+            results.append(f"✓ {post_title} 文案已生成并写入")
+        else:
+            results.append(f"✗ {post_title} 写入失败: {write_output.message}")
+    
+    return FeishuWorkflowOutput(
+        workflow_type="feishu_topic_post",
+        result="\n".join(results) if results else "没有处理任何选题",
+        processed_count=topic_output.record_count,
+        success_count=success_count
+    )
+
+
+# ============================================
 # 条件路由函数
 # ============================================
 def route_workflow(state: EntryNodeInput) -> str:
@@ -592,6 +777,11 @@ builder.add_node(
     feishu_hot_topic_workflow_node,
     metadata={"type": "agent", "llm_cfg": "config/hot_topic_generator_cfg.json"}
 )
+builder.add_node(
+    "feishu_topic_post",
+    feishu_topic_post_workflow_node,
+    metadata={"type": "agent", "llm_cfg": "config/product_post_generator_cfg.json"}
+)
 
 # 添加条件边作为入口
 builder.add_conditional_edges(
@@ -604,7 +794,8 @@ builder.add_conditional_edges(
         "image_suggestion": "image_suggestion",
         "weekly_review": "weekly_review",
         "feishu_product": "feishu_product",
-        "feishu_hot_topic": "feishu_hot_topic"
+        "feishu_hot_topic": "feishu_hot_topic",
+        "feishu_topic_post": "feishu_topic_post"
     }
 )
 
@@ -616,6 +807,7 @@ builder.add_edge("image_suggestion", END)
 builder.add_edge("weekly_review", END)
 builder.add_edge("feishu_product", END)
 builder.add_edge("feishu_hot_topic", END)
+builder.add_edge("feishu_topic_post", END)
 
 # 编译图
 main_graph = builder.compile()

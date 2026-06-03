@@ -170,3 +170,21 @@ class GlobalState(BaseModel):
     image_suggestion_result: str = Field(default="", description="图片建议生成结果")
     # 数据复盘相关
     weekly_review_result: str = Field(default="", description="每周数据复盘结果")
+
+
+# ============================================
+# 飞书产品文案工作流（工作流②）
+# ============================================
+class FeishuTopicPostInput(BaseModel):
+    """飞书产品文案工作流入参"""
+    feishu_app_token: str = Field(..., description="飞书多维表格app_token")
+    feishu_topic_table_id: str = Field(..., description="选题库table_id")
+    feishu_product_table_id: str = Field(..., description="产品素材库table_id")
+    feishu_content_table_id: str = Field(..., description="内容成品库table_id")
+    filter_status: str = Field(default="通过", description="选题状态筛选条件")
+
+
+class FeishuTopicPostOutput(BaseModel):
+    """飞书产品文案工作流出参"""
+    workflow_type: str = Field(default="feishu_topic_post", description="工作流类型")
+    result: str = Field(default="", description="执行结果")
