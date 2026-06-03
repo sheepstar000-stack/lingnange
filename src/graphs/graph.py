@@ -382,7 +382,7 @@ def llm_invoke(
     ctx = None,
 ) -> str:
     """调用LLM，带重试机制。"""
-    last_error: Exception = Exception("LLM调用失败，未知错误")
+    last_error = None
     for attempt in range(max_retries):
         try:
             kwargs = {"messages": messages, "model": model}
