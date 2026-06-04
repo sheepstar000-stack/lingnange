@@ -1284,8 +1284,10 @@ def feishu_content_organize_workflow_node(
             success_count=0
         )
 
-    # 步骤2: 整理每条记录的字段
+    # 步骤2: 整理每条记录的字段，并写入飞书表格
     organized_contents = []
+    success_count = 0
+    
     for record in content_output.records:
         fields = record.get("fields", {})
         record_id = record.get("record_id", "")
@@ -1299,8 +1301,7 @@ def feishu_content_organize_workflow_node(
         official_account = extract_feishu_field(fields, "发布账号")
 
         # 整理成格式化内容
-        content_item = f"""========================================
-【标题】{title}
+        content_item = f"""【标题】{title}
 
 【正文】
 {body}
@@ -1312,19 +1313,33 @@ def feishu_content_organize_workflow_node(
 
 【标签】{tags}
 
-【发布账号】{official_account}
-========================================"""
+【发布账号】{official_account}"""
         organized_contents.append(content_item)
 
-    # 步骤3: 合并所有内容
-    result_text = f"📋 内容整理完成，共整理 {len(organized_contents)} 条记录\n\n"
-    result_text += "\n".join(organized_contents)
+        # 写入飞书表格的"内容整理"字段
+        try:
+            from graphs.nodes.feishu_write_node import FeishuBitableWriter
+            writer = FeishuBitableWriter()
+            writer.update_record(
+                app_token=state.feishu_app_token,
+                table_id=state.feishu_content_table_id,
+                record_id=record_id,
+                fields={"内容整理": content_item}
+            )
+            success_count += 1
+            print(f"✓ 已写入内容整理字段: {title}")
+        except Exception as e:
+            print(f"✗ 写入失败: {title}, 错误: {e}")
+
+    # 步骤3: 合并所有内容用于显示
+    result_text = f"📋 内容整理完成，共整理 {len(organized_contents)} 条记录，成功写入 {success_count} 条\n\n"
+    result_text += "\n========================================\n".join(organized_contents)
 
     return FeishuWorkflowOutput(
         workflow_type="内容整理",
         result=result_text,
         processed_count=len(content_output.records),
-        success_count=len(organized_contents)
+        success_count=success_count
     )
 
 
