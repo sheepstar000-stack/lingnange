@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵楠阁内容生成控制面板</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; color: white; margin-bottom: 30px; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header p { font-size: 1.1em; opacity: 0.9; }
+        .card { background: white; border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+        .card-title { font-size: 1.3em; color: #333; margin-bottom: 16px; border-bottom: 2px solid #667eea; padding-bottom: 8px; }
+        .workflow-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+        .workflow-btn { padding: 16px 20px; border: 2px solid #667eea; background: white; color: #667eea; border-radius: 12px; cursor: pointer; transition: all 0.3s; font-size: 1em; font-weight: 500; }
+        .workflow-btn:hover { background: #667eea; color: white; transform: translateY(-2px); }
+        .workflow-btn.active { background: #667eea; color: white; }
+        .input-group { margin-bottom: 16px; }
+        .input-label { display: block; color: #555; font-weight: 500; margin-bottom: 8px; }
+        .input-field { width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1em; transition: border-color 0.3s; }
+        .input-field:focus { outline: none; border-color: #667eea; }
+        .input-field.required { border-color: #ff9800; }
+        .run-btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 1.2em; font-weight: 600; cursor: pointer; transition: transform 0.3s, box-shadow 0.3s; }
+        .run-btn:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(102,126,234,0.4); }
+        .run-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .loading { display: none; text-align: center; padding: 20px; }
+        .loading.show { display: block; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .result-section { display: none; }
+        .result-section.show { display: block; }
+        .result-status { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: 600; margin-bottom: 16px; }
+        .result-status.success { background: #4caf50; color: white; }
+        .result-status.error { background: #f44336; color: white; }
+        .result-content { background: #f5f5f5; padding: 16px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; font-size: 0.95em; line-height: 1.6; }
+        .token-section { background: #fff3e0; padding: 16px; border-radius: 8px; margin-bottom: 20px; }
+        .token-section .input-label { color: #e65100; }
+        .note { color: #666; font-size: 0.9em; margin-top: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>灵楠阁内容生成</h1>
+            <p>小红书工作流控制面板</p>
+        </div>
+
+        <div class="token-section card">
+            <div class="card-title">🔑 API 配置</div>
+            <div class="input-group">
+                <label class="input-label">API Token（必填，从Coze平台部署详情页获取）</label>
+                <input type="text" id="api-token" class="input-field required" placeholder="请输入您的API Token">
+            </div>
+            <p class="note">API Token会保存在浏览器本地，下次访问无需重新输入</p>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📋 选择工作流</div>
+            <div class="workflow-grid">
+                <button class="workflow-btn" data-workflow="热点选题" onclick="selectWorkflow('热点选题')">热点选题</button>
+                <button class="workflow-btn" data-workflow="选题文案" onclick="selectWorkflow('选题文案')">选题文案</button>
+                <button class="workflow-btn" data-workflow="客户故事" onclick="selectWorkflow('客户故事')">客户故事</button>
+                <button class="workflow-btn" data-workflow="图片建议" onclick="selectWorkflow('图片建议')">图片建议</button>
+                <button class="workflow-btn" data-workflow="数据复盘" onclick="selectWorkflow('数据复盘')">数据复盘</button>
+            </div>
+            <p class="note" style="margin-top:16px">已选择：<strong id="selected-workflow">未选择</strong></p>
+        </div>
+
+        <div class="card">
+            <div class="card-title">⚙️ 参数配置</div>
+            <div id="params-container"></div>
+            <p class="note">参数已预填默认值，通常无需修改</p>
+        </div>
+
+        <div class="card">
+            <button class="run-btn" onclick="runWorkflow()" id="run-btn">🚀 开始运行</button>
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>正在执行工作流，请稍候...</p>
+            </div>
+            <div class="result-section" id="result-section">
+                <span class="result-status" id="result-status"></span>
+                <div class="result-content" id="result-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://jv7dr2vk3d.coze.site/run';
+        
+        const workflowParams = {
+            '热点选题': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: 'FoWqb7NLuah1gdssEHbc7Wk9nQh' },
+                { key: 'feishu_hot_calendar_table_id', label: '热点日历表ID', default: 'tblT1KM0397UcGeM' },
+                { key: 'feishu_product_table_id', label: '产品素材表ID', default: 'tbllExTlKURFJP2j' },
+                { key: 'feishu_topic_table_id', label: '选题库表ID', default: 'tblJNjx74uZ3s1vs' }
+            ],
+            '选题文案': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: 'FoWqb7NLuah1gdssEHbc7Wk9nQh' },
+                { key: 'feishu_topic_table_id', label: '选题库表ID', default: 'tblJNjx74uZ3s1vs' },
+                { key: 'feishu_product_table_id', label: '产品素材表ID', default: 'tbllExTlKURFJP2j' },
+                { key: 'feishu_content_table_id', label: '内容成品库表ID', default: 'tblg7zZuWKcUvqQX' }
+            ],
+            '客户故事': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: 'FoWqb7NLuah1gdssEHbc7Wk9nQh' },
+                { key: 'feishu_content_table_id', label: '内容成品库表ID', default: 'tblg7zZuWKcUvqQX' },
+                { key: 'customer_background', label: '客户背景', default: '' },
+                { key: 'purchased_product', label: '购买产品', default: '' },
+                { key: 'purchase_reason', label: '购买原因', default: '' },
+                { key: 'usage_scenario', label: '使用场景', default: '' },
+                { key: 'customer_feedback', label: '客户反馈', default: '' }
+            ],
+            '图片建议': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: 'FoWqb7NLuah1gdssEHbc7Wk9nQh' },
+                { key: 'feishu_content_table_id', label: '内容成品库表ID', default: 'tblg7zZuWKcUvqQX' }
+            ],
+            '数据复盘': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: 'FoWqb7NLuah1gdssEHbc7Wk9nQh' },
+                { key: 'feishu_review_table_id', label: '数据复盘表ID', default: 'tblfSaXuLDh6OKEq' },
+                { key: 'feishu_topic_table_id', label: '选题库表ID', default: 'tblJNjx74uZ3s1vs' }
+            ]
+        };
+
+        let selectedWorkflow = '';
+
+        // 加载保存的API Token
+        document.getElementById('api-token').value = localStorage.getItem('apiToken') || '';
+
+        // 保存API Token
+        document.getElementById('api-token').addEventListener('change', function() {
+            localStorage.setItem('apiToken', this.value);
+        });
+
+        function selectWorkflow(workflow) {
+            selectedWorkflow = workflow;
+            document.getElementById('selected-workflow').textContent = workflow;
+            
+            // 更新按钮样式
+            document.querySelectorAll('.workflow-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.workflow === workflow) {
+                    btn.classList.add('active');
+                }
+            });
+
+            // 更新参数表单
+            updateParamsForm(workflow);
+        }
+
+        function updateParamsForm(workflow) {
+            const container = document.getElementById('params-container');
+            const params = workflowParams[workflow] || [];
+            
+            container.innerHTML = params.map(p => `
+                <div class="input-group">
+                    <label class="input-label">${p.label}</label>
+                    <input type="text" class="input-field" id="param-${p.key}" value="${p.default}" data-key="${p.key}">
+                </div>
+            `).join('');
+        }
+
+        async function runWorkflow() {
+            const apiToken = document.getElementById('api-token').value;
+            if (!apiToken) {
+                alert('请先输入API Token');
+                return;
+            }
+
+            if (!selectedWorkflow) {
+                alert('请先选择工作流');
+                return;
+            }
+
+            // 收集参数
+            const params = { workflow_type: selectedWorkflow };
+            document.querySelectorAll('#params-container input').forEach(input => {
+                params[input.dataset.key] = input.value;
+            });
+
+            // 显示加载状态
+            document.getElementById('run-btn').disabled = true;
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result-section').classList.remove('show');
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiToken
+                    },
+                    body: JSON.stringify(params)
+                });
+
+                const result = await response.json();
+                
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('result-section').classList.add('show');
+                
+                const statusEl = document.getElementById('result-status');
+                const contentEl = document.getElementById('result-content');
+
+                if (result.error || result.message) {
+                    statusEl.className = 'result-status error';
+                    statusEl.textContent = '失败';
+                    contentEl.textContent = result.error || result.message || JSON.stringify(result, null, 2);
+                } else {
+                    statusEl.className = 'result-status success';
+                    statusEl.textContent = '成功';
+                    contentEl.textContent = result.result || JSON.stringify(result, null, 2);
+                }
+            } catch (error) {
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('result-section').classList.add('show');
+                
+                document.getElementById('result-status').className = 'result-status error';
+                document.getElementById('result-status').textContent = '请求失败';
+                document.getElementById('result-content').textContent = error.message;
+            }
+
+            document.getElementById('run-btn').disabled = false;
+        }
+
+        // 默认选择第一个工作流
+        selectWorkflow('热点选题');
+    </script>
+</body>
+</html>
