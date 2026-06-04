@@ -11,7 +11,8 @@ import cozeloop
 import uvicorn
 import time
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
@@ -289,8 +290,234 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# 添加CORS中间件，允许跨域访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # OpenAI 兼容接口处理器
 openai_handler = OpenAIChatHandler(service)
+
+
+# 控制面板HTML内容
+CONTROL_PANEL_HTML = '''
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>灵楠阁 - 小红书内容生成控制台</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .header { text-align: center; color: white; margin-bottom: 30px; }
+        .header h1 { font-size: 2em; margin-bottom: 10px; }
+        .header p { opacity: 0.9; }
+        .card { background: white; border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+        .workflow-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .workflow-btn { padding: 16px; border: 2px solid #e0e0e0; border-radius: 12px; background: white; cursor: pointer; transition: all 0.3s; text-align: center; }
+        .workflow-btn:hover { border-color: #667eea; background: #f8f9ff; }
+        .workflow-btn.active { border-color: #667eea; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .workflow-btn .icon { font-size: 24px; margin-bottom: 8px; }
+        .workflow-btn .name { font-weight: 600; }
+        .params-section { display: none; }
+        .params-section.show { display: block; }
+        .param-group { margin-bottom: 16px; }
+        .param-group label { display: block; font-weight: 600; margin-bottom: 6px; color: #333; }
+        .param-group input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+        .param-group input:focus { outline: none; border-color: #667eea; }
+        .param-group .hint { font-size: 12px; color: #666; margin-top: 4px; }
+        .run-btn { width: 100%; padding: 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 20px; transition: transform 0.2s; }
+        .run-btn:hover { transform: translateY(-2px); }
+        .run-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .result-section { display: none; margin-top: 20px; }
+        .result-section.show { display: block; }
+        .result-card { background: #f8f9fa; border-radius: 12px; padding: 16px; }
+        .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .result-status { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .result-status.success { background: #d4edda; color: #155724; }
+        .result-status.error { background: #f8d7da; color: #721c24; }
+        .result-content { white-space: pre-wrap; font-size: 14px; line-height: 1.6; max-height: 400px; overflow-y: auto; }
+        .loading { display: none; text-align: center; padding: 20px; }
+        .loading.show { display: block; }
+        .spinner { width: 40px; height: 40px; border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .config-section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+        .config-section h3 { margin-bottom: 12px; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>灵楠阁 · 小红书内容生成控制台</h1>
+            <p>点击工作流类型，一键生成优质内容</p>
+        </div>
+        <div class="card">
+            <div class="config-section">
+                <h3>⚙️ 基础配置</h3>
+                <div class="param-group">
+                    <label>API Token</label>
+                    <input type="text" id="api_token" placeholder="请输入API Token（从平台获取）">
+                    <div class="hint">在Coze平台部署详情页可以查看API Token</div>
+                </div>
+            </div>
+            <h3 style="margin-bottom: 12px; color: #333;">选择工作流</h3>
+            <div class="workflow-grid">
+                <div class="workflow-btn" data-type="热点选题"><div class="icon">🔥</div><div class="name">热点选题</div></div>
+                <div class="workflow-btn" data-type="选题文案"><div class="icon">📝</div><div class="name">选题文案</div></div>
+                <div class="workflow-btn" data-type="客户故事"><div class="icon">💬</div><div class="name">客户故事</div></div>
+                <div class="workflow-btn" data-type="图片建议"><div class="icon">🖼️</div><div class="name">图片建议</div></div>
+                <div class="workflow-btn" data-type="数据复盘"><div class="icon">📊</div><div class="name">数据复盘</div></div>
+            </div>
+            <div class="params-section" id="params-section">
+                <h3 style="margin-bottom: 12px; color: #333;">参数配置</h3>
+                <div id="dynamic-params"></div>
+                <button class="run-btn" id="run-btn" onclick="runWorkflow()">▶️ 开始运行</button>
+            </div>
+            <div class="loading" id="loading"><div class="spinner"></div><div>正在生成内容，请稍候...</div></div>
+            <div class="result-section" id="result-section">
+                <div class="result-card">
+                    <div class="result-header"><strong>执行结果</strong><span class="result-status" id="result-status"></span></div>
+                    <div class="result-content" id="result-content"></div>
+                </div>
+            </div>
+        </div>
+        <div class="card" style="background: rgba(255,255,255,0.9);">
+            <h3 style="margin-bottom: 12px; color: #333;">📖 使用说明</h3>
+            <ul style="line-height: 1.8; color: #555;">
+                <li><strong>热点选题</strong>：从热点日历+产品库生成选题，写入选题库</li>
+                <li><strong>选题文案</strong>：读取通过的选题，生成完整文案</li>
+                <li><strong>客户故事</strong>：根据客户信息生成真实感故事文案</li>
+                <li><strong>图片建议</strong>：为待审核内容生成配图建议</li>
+                <li><strong>数据复盘</strong>：分析周数据，输出优化建议</li>
+            </ul>
+        </div>
+    </div>
+    <script>
+        const DEFAULT_CONFIG = {
+            feishu_app_token: 'FoWqb7NLuah1gdssEHbc7Wk9nQh',
+            feishu_product_table_id: 'tbllExTlKURFJP2j',
+            feishu_topic_table_id: 'tblJNjx74uZ3s1vs',
+            feishu_content_table_id: 'tblg7zZuWKcUvqQX',
+            feishu_review_table_id: 'tblfSaXuLDh6OKEq',
+            feishu_hot_calendar_table_id: 'tblT1KM0397UcGeM',
+            target_audience: '25-35岁女性，喜欢传统文化和审美生活方式',
+            content_style: '新中式、克制、种草但不硬广',
+            publish_account: '灵楠阁品牌号',
+            filter_status: '通过'
+        };
+        const WORKFLOW_PARAMS = {
+            '热点选题': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: DEFAULT_CONFIG.feishu_app_token },
+                { key: 'feishu_hot_calendar_table_id', label: '热点日历表ID', default: DEFAULT_CONFIG.feishu_hot_calendar_table_id },
+                { key: 'feishu_product_table_id', label: '产品素材表ID', default: DEFAULT_CONFIG.feishu_product_table_id },
+                { key: 'feishu_topic_table_id', label: '选题库表ID', default: DEFAULT_CONFIG.feishu_topic_table_id }
+            ],
+            '选题文案': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: DEFAULT_CONFIG.feishu_app_token },
+                { key: 'feishu_topic_table_id', label: '选题库表ID', default: DEFAULT_CONFIG.feishu_topic_table_id },
+                { key: 'feishu_product_table_id', label: '产品素材表ID', default: DEFAULT_CONFIG.feishu_product_table_id },
+                { key: 'feishu_content_table_id', label: '内容成品库表ID', default: DEFAULT_CONFIG.feishu_content_table_id }
+            ],
+            '客户故事': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: DEFAULT_CONFIG.feishu_app_token },
+                { key: 'feishu_content_table_id', label: '内容成品库表ID', default: DEFAULT_CONFIG.feishu_content_table_id },
+                { key: 'customer_background', label: '客户背景', default: '' },
+                { key: 'purchased_product', label: '购买产品', default: '' },
+                { key: 'purchase_reason', label: '购买原因', default: '' },
+                { key: 'usage_scenario', label: '使用场景', default: '' },
+                { key: 'customer_feedback', label: '客户反馈', default: '' }
+            ],
+            '图片建议': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: DEFAULT_CONFIG.feishu_app_token },
+                { key: 'feishu_content_table_id', label: '内容成品库表ID', default: DEFAULT_CONFIG.feishu_content_table_id }
+            ],
+            '数据复盘': [
+                { key: 'feishu_app_token', label: '飞书App Token', default: DEFAULT_CONFIG.feishu_app_token },
+                { key: 'feishu_review_table_id', label: '数据复盘表ID', default: DEFAULT_CONFIG.feishu_review_table_id },
+                { key: 'feishu_topic_table_id', label: '选题库表ID', default: DEFAULT_CONFIG.feishu_topic_table_id }
+            ]
+        };
+        let selectedWorkflow = null;
+        document.querySelectorAll('.workflow-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.querySelectorAll('.workflow-btn').forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                selectedWorkflow = this.dataset.type;
+                showParams(selectedWorkflow);
+            });
+        });
+        function showParams(workflowType) {
+            const paramsSection = document.getElementById('params-section');
+            const dynamicParams = document.getElementById('dynamic-params');
+            dynamicParams.innerHTML = '';
+            const params = WORKFLOW_PARAMS[workflowType] || [];
+            params.forEach(param => {
+                const div = document.createElement('div');
+                div.className = 'param-group';
+                div.innerHTML = '<label>' + param.label + '</label><input type="text" id="param_' + param.key + '" value="' + param.default + '" placeholder="' + param.label + '">';
+                dynamicParams.appendChild(div);
+            });
+            paramsSection.classList.add('show');
+            document.getElementById('result-section').classList.remove('show');
+            document.getElementById('loading').classList.remove('show');
+        }
+        async function runWorkflow() {
+            if (!selectedWorkflow) { alert('请先选择工作流类型'); return; }
+            const apiToken = document.getElementById('api_token').value;
+            if (!apiToken) { alert('请输入API Token'); return; }
+            const params = { workflow_type: selectedWorkflow };
+            document.querySelectorAll('#dynamic-params input').forEach(input => {
+                const key = input.id.replace('param_', '');
+                params[key] = input.value;
+            });
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result-section').classList.remove('show');
+            document.getElementById('run-btn').disabled = true;
+            try {
+                const response = await fetch('/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiToken },
+                    body: JSON.stringify(params)
+                });
+                const result = await response.json();
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('result-section').classList.add('show');
+                const statusEl = document.getElementById('result-status');
+                const contentEl = document.getElementById('result-content');
+                if (result.error || result.message) {
+                    statusEl.className = 'result-status error';
+                    statusEl.textContent = '失败';
+                    contentEl.textContent = result.error || result.message || JSON.stringify(result, null, 2);
+                } else {
+                    statusEl.className = 'result-status success';
+                    statusEl.textContent = '成功';
+                    contentEl.textContent = result.result || JSON.stringify(result, null, 2);
+                }
+            } catch (error) {
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('result-section').classList.add('show');
+                document.getElementById('result-status').className = 'result-status error';
+                document.getElementById('result-status').textContent = '错误';
+                document.getElementById('result-content').textContent = '请求失败: ' + error.message;
+            }
+            document.getElementById('run-btn').disabled = false;
+        }
+    </script>
+</body>
+</html>
+'''
+
+
+@app.get("/control")
+async def get_control_panel():
+    """返回控制面板HTML页面"""
+    return HTMLResponse(content=CONTROL_PANEL_HTML)
 
 
 @app.post("/async_run")
