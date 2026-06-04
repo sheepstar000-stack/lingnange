@@ -132,6 +132,7 @@
                 <option value="热点选题">🔥 热点选题 - 根据热点日历生成选题</option>
                 <option value="选题文案">📝 选题文案 - 根据选题生成发布文案</option>
                 <option value="图片建议">🖼️ 图片建议 - 生成图片拍摄建议</option>
+                <option value="内容整理">📋 内容整理 - 整理标题、正文、封面文案、图片建议、标签</option>
             </select>
             <div id="workflowDesc" class="workflow-desc"></div>
         </div>
@@ -179,6 +180,22 @@
                 </div>
             </div>
 
+            <!-- 内容整理参数 -->
+            <div id="contentOrganizeParams" class="hidden">
+                <div class="form-group">
+                    <label>内容成品库表ID</label>
+                    <input type="text" id="contentTableId3" value="tblg7zZuWKcUvqQX" />
+                </div>
+                <div class="form-group">
+                    <label>筛选状态</label>
+                    <input type="text" id="filterStatus2" value="待审核" placeholder="默认筛选"待审核"状态的内容" />
+                </div>
+                <div class="form-group">
+                    <label>读取条数</label>
+                    <input type="number" id="pageSize" value="5" placeholder="默认读取5条" />
+                </div>
+            </div>
+
             <!-- 公共参数 -->
             <div class="form-group">
                 <label>飞书App Token</label>
@@ -206,7 +223,8 @@
         const workflowDescriptions = {
             '热点选题': '读取热点日历和产品素材，生成选题建议写入选题库',
             '选题文案': '读取选题库中"通过"状态的选题，生成发布文案写入内容成品库',
-            '图片建议': '读取内容成品库中"待审核"状态的内容，生成图片拍摄建议'
+            '图片建议': '读取内容成品库中"待审核"状态的内容，生成图片拍摄建议',
+            '内容整理': '读取内容成品库，整理标题、正文、封面文案、图片建议、标签等'
         };
 
         function updateWorkflowInfo() {
@@ -219,6 +237,7 @@
             document.getElementById('hotTopicParams').classList.add('hidden');
             document.getElementById('topicPostParams').classList.add('hidden');
             document.getElementById('imageSuggestionParams').classList.add('hidden');
+            document.getElementById('contentOrganizeParams').classList.add('hidden');
             
             if (workflowType) {
                 descEl.textContent = workflowDescriptions[workflowType];
@@ -232,6 +251,8 @@
                     document.getElementById('topicPostParams').classList.remove('hidden');
                 } else if (workflowType === '图片建议') {
                     document.getElementById('imageSuggestionParams').classList.remove('hidden');
+                } else if (workflowType === '内容整理') {
+                    document.getElementById('contentOrganizeParams').classList.remove('hidden');
                 }
             } else {
                 descEl.textContent = '';
@@ -264,6 +285,10 @@
                 params.filter_status = document.getElementById('filterStatus').value;
             } else if (workflowType === '图片建议') {
                 params.feishu_content_table_id = document.getElementById('contentTableId2').value;
+            } else if (workflowType === '内容整理') {
+                params.feishu_content_table_id = document.getElementById('contentTableId3').value;
+                params.filter_status = document.getElementById('filterStatus2').value;
+                params.page_size = parseInt(document.getElementById('pageSize').value) || 5;
             }
 
             const btn = document.getElementById('runBtn');

@@ -2,7 +2,7 @@
 
 ## 项目概述
 - **名称**: 小红书内容生成飞书自动化系统
-- **功能**: 5个飞书自动化工作流，实现从飞书读取→LLM生成→写入飞书的完整流程
+- **功能**: 6个飞书自动化工作流，实现从飞书读取→LLM生成→写入飞书的完整流程
 
 ## 工作流清单
 
@@ -13,6 +13,7 @@
 | 客户故事 | 客户故事 | 手动输入客户信息→生成故事→写入内容库 | 客户背景、购买产品、购买原因、使用场景、反馈 |
 | 图片建议 | 图片建议 | 从内容库读取待审核内容→生成图片建议→更新内容库 | app_token、内容库ID、产品表ID |
 | 数据复盘 | 数据复盘 | 从数据复盘表读取本周数据→分析→生成选题建议 | app_token、复盘表ID、选题库ID |
+| 内容整理 | 内容整理 | 从内容库读取数据→整理输出标题、正文、封面文案、图片建议、标签、发布账号 | app_token、内容库ID、筛选状态 |
 
 ## 节点清单
 
@@ -23,6 +24,7 @@
 | 客户故事 | `graph.py` | agent | 客户故事自动化 |
 | 图片建议 | `graph.py` | agent | 图片建议自动化 |
 | 数据复盘 | `graph.py` | agent | 数据复盘自动化 |
+| 内容整理 | `graph.py` | task | 内容整理输出 |
 | feishu_read | `nodes/feishu_read_node.py` | task | 飞书表格读取 |
 | feishu_write | `nodes/feishu_write_node.py` | task | 飞书表格写入 |
 
@@ -125,6 +127,17 @@ src/graphs/
   "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
   "feishu_review_table_id": "tblfSaXuLDh6OKEq",
   "feishu_topic_table_id": "tblJNjx74uZ3s1vs"
+}
+```
+
+### 6. 内容整理
+```json
+{
+  "workflow_type": "内容整理",
+  "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+  "feishu_content_table_id": "tblg7zZuWKcUvqQX",
+  "filter_status": "待审核",
+  "page_size": 10
 }
 ```
 

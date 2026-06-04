@@ -452,7 +452,7 @@ def get_account_context(account: str) -> str:
 # ============================================
 class WorkflowInput(BaseModel):
     """工作流统一输入参数"""
-    workflow_type: Literal["热点选题", "选题文案", "客户故事", "图片建议", "数据复盘"] = Field(
+    workflow_type: Literal["热点选题", "选题文案", "客户故事", "图片建议", "数据复盘", "内容整理"] = Field(
         ...,
         description="工作流类型"
     )
@@ -476,6 +476,10 @@ class WorkflowInput(BaseModel):
     purchase_reason: str = Field(default="", description="购买原因")
     usage_scenario: str = Field(default="", description="使用场景")
     customer_feedback: str = Field(default="", description="客户反馈")
+
+    # 内容整理参数
+    filter_status: str = Field(default="待审核", description="筛选状态（如：待审核、已通过）")
+    page_size: int = Field(default=10, description="读取记录数量")
 
 
 class WorkflowOutput(BaseModel):
@@ -1247,6 +1251,84 @@ def feishu_weekly_review_workflow_node(
 
 
 # ============================================
+# 工作流⑥：内容整理
+# 从内容成品库读取数据，整理输出标题、正文、封面文案、图片建议、标签、@官方号
+# ============================================
+def feishu_content_organize_workflow_node(
+    state: WorkflowInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 内容整理
+    desc: 从内容成品库读取数据，整理输出标题、正文、封面文案、图片建议、标签、@官方号
+    integrations: 飞书多维表格
+    """
+    ctx = runtime.context
+
+    # 步骤1: 从内容成品库读取数据
+    content_input = FeishuReadInput(
+        app_token=state.feishu_app_token,
+        table_id=state.feishu_content_table_id,
+        filter_field="发布状态",
+        filter_value=state.filter_status,
+        page_size=state.page_size
+    )
+    content_output = feishu_read_node(content_input, config, runtime)
+
+    if not content_output.records:
+        return FeishuWorkflowOutput(
+            workflow_type="内容整理",
+            result="没有找到符合条件的记录",
+            processed_count=0,
+            success_count=0
+        )
+
+    # 步骤2: 整理每条记录的字段
+    organized_contents = []
+    for record in content_output.records:
+        fields = record.get("fields", {})
+        record_id = record.get("record_id", "")
+
+        # 提取各个字段
+        title = extract_feishu_field(fields, "发布标题")
+        body = extract_feishu_field(fields, "正文")
+        cover_text = extract_feishu_field(fields, "封面文案")
+        image_suggestion = extract_feishu_field(fields, "图片建议")
+        tags = extract_feishu_field(fields, "发布标签")
+        official_account = extract_feishu_field(fields, "发布账号")
+
+        # 整理成格式化内容
+        content_item = f"""========================================
+【标题】{title}
+
+【正文】
+{body}
+
+【封面文案】{cover_text}
+
+【图片建议】
+{image_suggestion}
+
+【标签】{tags}
+
+【发布账号】{official_account}
+========================================"""
+        organized_contents.append(content_item)
+
+    # 步骤3: 合并所有内容
+    result_text = f"📋 内容整理完成，共整理 {len(organized_contents)} 条记录\n\n"
+    result_text += "\n".join(organized_contents)
+
+    return FeishuWorkflowOutput(
+        workflow_type="内容整理",
+        result=result_text,
+        processed_count=len(content_output.records),
+        success_count=len(organized_contents)
+    )
+
+
+# ============================================
 # 条件路由 & 图构建
 # ============================================
 def route_workflow(state: WorkflowInput) -> str:
@@ -1265,6 +1347,7 @@ builder.add_node("选题文案", feishu_topic_post_workflow_node)
 builder.add_node("客户故事", feishu_customer_story_workflow_node)
 builder.add_node("图片建议", feishu_image_suggestion_workflow_node)
 builder.add_node("数据复盘", feishu_weekly_review_workflow_node)
+builder.add_node("内容整理", feishu_content_organize_workflow_node)
 
 builder.add_conditional_edges(
     source="__start__",
@@ -1274,7 +1357,8 @@ builder.add_conditional_edges(
         "选题文案": "选题文案",
         "客户故事": "客户故事",
         "图片建议": "图片建议",
-        "数据复盘": "数据复盘"
+        "数据复盘": "数据复盘",
+        "内容整理": "内容整理"
     }
 )
 
@@ -1283,5 +1367,6 @@ builder.add_edge("选题文案", END)
 builder.add_edge("客户故事", END)
 builder.add_edge("图片建议", END)
 builder.add_edge("数据复盘", END)
+builder.add_edge("内容整理", END)
 
 main_graph = builder.compile()

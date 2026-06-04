@@ -42,6 +42,12 @@ DEFAULT_PARAMS = {
         "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
         "feishu_review_table_id": "tblfSaXuLDh6OKEq",
         "feishu_topic_table_id": "tblJNjx74uZ3s1vs"
+    },
+    "内容整理": {
+        "feishu_app_token": "FoWqb7NLuah1gdssEHbc7Wk9nQh",
+        "feishu_content_table_id": "tblg7zZuWKcUvqQX",
+        "filter_status": "待审核",
+        "page_size": 5
     }
 }
 
@@ -107,6 +113,7 @@ def main():
         print("  3. 客户故事")
         print("  4. 图片建议")
         print("  5. 数据复盘")
+        print("  6. 内容整理")
         print("  0. 退出")
         
         choice = input("\n输入编号: ").strip()
@@ -116,7 +123,8 @@ def main():
             "2": "选题文案",
             "3": "客户故事",
             "4": "图片建议",
-            "5": "数据复盘"
+            "5": "数据复盘",
+            "6": "内容整理"
         }
         
         if choice == "0":
