@@ -2,12 +2,13 @@
 
 ## 项目概述
 - **名称**: 小红书内容生成飞书自动化系统
-- **功能**: 6个飞书自动化工作流，实现从飞书读取→LLM生成→写入飞书的完整流程
+- **功能**: 7个飞书自动化工作流，实现从飞书读取→LLM生成→写入飞书的完整流程
 
 ## 工作流清单
 
 | 工作流名称 | workflow_type | 功能描述 | 输入参数 |
 |-----------|---------------|---------|---------|
+| **一键生成** | 一键生成 | 一键完成全流程：热点→选题→文案→图片建议，直接生成最终成品 | publish_account（默认古典家具号） |
 | 热点选题 | 热点选题 | 从热点日历+产品库读取→生成选题→写入选题库 | app_token、热点日历ID、产品表ID、选题库ID |
 | 选题文案 | 选题文案 | 从选题库读取通过的选题→生成文案→写入内容库 | app_token、选题库ID、产品表ID、内容库ID |
 | 客户故事 | 客户故事 | 手动输入客户信息→生成故事→写入内容库 | 客户背景、购买产品、购买原因、使用场景、反馈 |
@@ -19,6 +20,7 @@
 
 | 节点名 | 文件位置 | 类型 | 功能描述 |
 |-------|---------|------|---------|
+| **一键生成** | `graph.py` | agent | 一键完成选题+文案+图片建议全流程 |
 | 热点选题 | `graph.py` | agent | 热点选题自动化 |
 | 选题文案 | `graph.py` | agent | 选题文案自动化 |
 | 客户故事 | `graph.py` | agent | 客户故事自动化 |
@@ -34,8 +36,8 @@
 
 ```
 src/graphs/
-├── state.py                    # 状态定义：飞书读取/写入 + 5个工作流Input/Output
-├── graph.py                    # 主图编排：条件路由到5个飞书自动化工作流
+├── state.py                    # 状态定义：飞书读取/写入 + 7个工作流Input/Output
+├── graph.py                    # 主图编排：条件路由到7个飞书自动化工作流
 └── nodes/
     ├── __init__.py
     ├── feishu_read_node.py     # 飞书表格读取节点
@@ -46,8 +48,8 @@ src/graphs/
 
 | 配置文件 | 对应工作流 | 说明 |
 |---------|-----------|------|
-| config/feishu_hot_topic_cfg.json | 热点选题 | 热点选题生成器提示词 |
-| config/feishu_topic_post_cfg.json | 选题文案 | 产品文案生成器提示词 |
+| config/feishu_hot_topic_cfg.json | 热点选题/一键生成 | 热点选题生成器提示词 |
+| config/feishu_topic_post_cfg.json | 选题文案/一键生成 | 产品文案生成器提示词 |
 | config/feishu_customer_story_cfg.json | 客户故事 | 客户故事生成器提示词 |
 | config/feishu_image_suggestion_cfg.json | 图片建议 | 图片建议生成器提示词 |
 | config/feishu_weekly_review_cfg.json | 数据复盘 | 数据复盘分析提示词 |

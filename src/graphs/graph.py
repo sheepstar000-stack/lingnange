@@ -7,6 +7,7 @@ import os
 import re
 import json
 import time
+import logging
 import requests
 from datetime import datetime
 from typing import Literal, Dict, Any
@@ -29,7 +30,7 @@ from graphs.state import (
     FeishuWeeklyReviewInput,
 )
 from graphs.nodes.feishu_read_node import feishu_read_node
-from graphs.nodes.feishu_write_node import feishu_write_node
+from graphs.nodes.feishu_write_node import feishu_write_node, FeishuBitableWriter
 
 
 # ============================================
@@ -451,10 +452,10 @@ def get_account_context(account: str) -> str:
 # 统一入参定义
 # ============================================
 class WorkflowInput(BaseModel):
-    """工作流统一输入参数"""
-    workflow_type: Literal["热点选题", "选题文案", "客户故事", "图片建议", "数据复盘", "内容整理"] = Field(
-        ...,
-        description="工作流类型"
+    """工作流统一输入参数 - 所有参数已预填默认值，直接运行即可"""
+    workflow_type: Literal["一键生成", "热点选题", "选题文案", "客户故事", "图片建议", "数据复盘", "内容整理"] = Field(
+        default="一键生成",
+        description="工作流类型（默认：一键生成，直接运行即可）"
     )
 
     # 飞书通用参数
@@ -1344,6 +1345,459 @@ def feishu_content_organize_workflow_node(
 
 
 # ============================================
+# 一键生成工作流
+# ============================================
+def one_click_generate_workflow_node(
+    state: WorkflowInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context]
+) -> FeishuWorkflowOutput:
+    """
+    title: 一键生成
+    desc: 一键完成选题→文案→图片建议全流程，自动写入飞书表格，无需中间审核
+    integrations: 飞书多维表格, 大语言模型
+    """
+    ctx = runtime.context
+    
+    # 预设参数（已默认填好）
+    APP_TOKEN = state.feishu_app_token or "FoWqb7NLuah1gdssEHbc7Wk9nQh"
+    HOT_CALENDAR_TABLE = state.feishu_hot_calendar_table_id or "tblT1KM0397UcGeM"
+    PRODUCT_TABLE = state.feishu_product_table_id or "tbllExTlKURFJP2j"
+    TOPIC_TABLE = state.feishu_topic_table_id or "tblJNjx74uZ3s1vs"
+    CONTENT_TABLE = state.feishu_content_table_id or "tblg7zZuWKcUvqQX"
+    publish_account = state.publish_account or "灵楠阁品牌号"
+    
+    # ========== 步骤1: 生成选题 ==========
+    print("📝 步骤1: 正在生成选题...")
+    
+    # 读取热点日历（筛选状态为"待准备"的热点）
+    hot_calendar_input = FeishuReadInput(
+        app_token=APP_TOKEN,
+        table_id=HOT_CALENDAR_TABLE,
+        filter_field="状态",
+        filter_value="待准备",
+        page_size=5
+    )
+    hot_calendar_output = feishu_read_node(hot_calendar_input, config, runtime)
+    logging.info(f"读取热点日历: {hot_calendar_output.record_count} 条记录")
+    
+    # 读取产品表
+    product_input = FeishuReadInput(
+        app_token=APP_TOKEN,
+        table_id=PRODUCT_TABLE,
+        filter_field="产品状态",
+        filter_value="可发布",
+        page_size=10
+    )
+    product_output = feishu_read_node(product_input, config, runtime)
+    logging.info(f"读取产品表: {product_output.record_count} 条记录")
+    
+    # 构建产品列表
+    products = []
+    for record in product_output.records:
+        fields = record.get("fields", {})
+        products.append({
+            "名称": extract_feishu_field(fields, "产品名称"),
+            "分类": extract_feishu_field(fields, "产品分类"),
+            "材质": extract_feishu_field(fields, "材质说明"),
+            "卖点": extract_feishu_field(fields, "核心卖点"),
+            "价格": extract_feishu_field(fields, "价格区间"),
+            "人群": extract_feishu_field(fields, "适合人群"),
+            "场景": extract_feishu_field(fields, "使用场景")
+        })
+    
+    account_context = get_account_context(publish_account)
+    products = filter_products_by_account(products, publish_account)
+    
+    # 构建产品摘要字符串
+    product_summary = ""
+    for p in products:
+        product_summary += f"- {p.get('名称', '')}（{p.get('分类', '')}类）：材质{p.get('材质', '')}，卖点{p.get('卖点', '')}，{p.get('价格', '')}价位，适合{p.get('人群', '')}人群，{p.get('场景', '')}场景\n"
+    if not product_summary:
+        product_summary = "无可用产品"
+    
+    # 加载热点选题配置
+    cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_hot_topic_cfg.json")
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        hot_topic_cfg = json.load(f)
+    
+    llm_client = LLMClient()
+    
+    generated_topics = []
+    topic_record_ids = []
+    
+    for hot_record in hot_calendar_output.records[:3]:  # 只处理3个热点
+        logging.info(f"处理热点: {hot_record.get('record_id', 'unknown')}")
+        hot_fields = hot_record.get("fields", {})
+        hot_topic_name = extract_feishu_field(hot_fields, "热点名称")
+        hot_topic_date = extract_feishu_field(hot_fields, "热点日期")
+        hot_topic_type = extract_feishu_field(hot_fields, "热点类型")
+        hot_angles = extract_feishu_field(hot_fields, "编辑建议角度")
+        logging.info(f"  热点名称: {hot_topic_name}, 类型: {hot_topic_type}")
+        
+        if not hot_topic_name:
+            logging.info("  热点名称为空，跳过")
+            continue
+        
+        user_prompt = f"""请根据以下信息为指定账号生成3个选题方案：
+
+{account_context}
+
+热点名称：{hot_topic_name}
+热点日期：{hot_topic_date}
+热点类型：{hot_topic_type if hot_topic_type else '无'}
+编辑建议角度：{hot_angles if hot_angles else '无，请自行发挥'}
+
+可用产品列表：
+{product_summary}
+
+请直接输出JSON数组，每个选题包含：标题、SOP类型、账号、选题理由、封面方向、标签。"""
+        
+        sp_template = Template(hot_topic_cfg.get("sp", ""))
+        sp_content = sp_template.render({})
+        
+        response = llm_client.invoke(
+            messages=[
+                SystemMessage(content=sp_content),
+                HumanMessage(content=user_prompt)
+            ],
+            model=hot_topic_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
+            temperature=hot_topic_cfg.get("config", {}).get("temperature", 0.7),
+            max_completion_tokens=hot_topic_cfg.get("config", {}).get("max_completion_tokens", 4096)
+        )
+        
+        try:
+            content = response.content if hasattr(response, 'content') else str(response)
+            logging.info(f"LLM响应内容: {content[:500]}")
+            
+            # 多策略解析JSON
+            topics_data: list = []
+            
+            # 策略1: 尝试提取完整的JSON数组
+            json_match = re.search(r'\[.*\]', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                try:
+                    topics_data = json.loads(json_str)
+                    logging.info(f"策略1成功: 解析到 {len(topics_data)} 个选题")
+                except json.JSONDecodeError as e:
+                    logging.warning(f"策略1失败: {e}")
+                    # 策略2: 尝试修复JSON（添加缺失的结束符）
+                    try:
+                        # 尝试截取到最后一个完整的对象
+                        last_brace_pos = json_str.rfind('}')
+                        if last_brace_pos > 0:
+                            fixed_json = json_str[:last_brace_pos + 1] + ']'
+                            topics_data = json.loads(fixed_json)
+                            logging.info(f"策略2成功: 解析到 {len(topics_data)} 个选题")
+                    except json.JSONDecodeError as e2:
+                        logging.error(f"策略2失败: {e2}")
+            
+            # 策略3: 如果没有找到数组，尝试提取单个JSON对象
+            if not topics_data:
+                obj_matches = re.findall(r'\{[^{}]*"标题"[^{}]*\}', content, re.DOTALL)
+                for obj_str in obj_matches[:3]:
+                    try:
+                        obj_data = json.loads(obj_str)
+                        topics_data.append(obj_data)
+                    except:
+                        pass
+                if topics_data:
+                    logging.info(f"策略3成功: 提取到 {len(topics_data)} 个选题对象")
+            
+            if not topics_data:
+                logging.error("所有JSON解析策略都失败")
+                continue
+            
+            for topic_item in topics_data[:3]:
+                topic_title = topic_item.get("标题", "")
+                topic_sop = topic_item.get("SOP类型", "")
+                topic_reason = topic_item.get("选题理由", "")
+                topic_cover = topic_item.get("封面方向", "")
+                topic_tags = topic_item.get("标签", "")
+                
+                # 处理标签格式：飞书多行文本字段需要字符串，而不是数组
+                if isinstance(topic_tags, list):
+                    topic_tags_str = " ".join(topic_tags)
+                else:
+                    topic_tags_str = str(topic_tags) if topic_tags else ""
+                
+                # 写入选题库（使用正确的飞书字段名）
+                new_topic_fields = {
+                    "选题标题": topic_title,
+                    "内容栏目": topic_sop,
+                    "目标账号": publish_account,
+                    "切入角度": topic_reason,
+                    "封面图方向": topic_cover,
+                    "预期标签": topic_tags_str,
+                    "选题状态": "通过",  # 自动审核通过
+                }
+                
+                try:
+                    logging.info(f"正在写入选题: {topic_title}")
+                    writer = FeishuBitableWriter()
+                    add_result = writer.add_record(APP_TOKEN, TOPIC_TABLE, new_topic_fields)
+                    logging.info(f"飞书写入响应: {add_result.get('code', 'unknown')}")
+                    new_record_id = add_result.get("data", {}).get("records", [{}])[0].get("record_id")
+                    topic_record_ids.append(new_record_id)
+                    generated_topics.append({
+                        "record_id": new_record_id,
+                        "title": topic_title,
+                        "sop": topic_sop
+                    })
+                    logging.info(f"选题写入成功: {topic_title}")
+                except Exception as e:
+                    logging.error(f"选题写入失败: {topic_title} - {e}")
+        except Exception as e:
+            logging.error(f"选题生成失败: {e}")
+    
+    logging.info(f"📝 步骤1完成: 共生成 {len(generated_topics)} 个选题")
+    
+    # ========== 步骤2: 生成文案 ==========
+    logging.info("✍️ 步骤2: 正在生成文案...")
+    
+    # 加载选题文案配置
+    cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_topic_post_cfg.json")
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        topic_post_cfg = json.load(f)
+    
+    generated_contents = []
+    
+    logging.info(f"准备处理 {len(generated_topics)} 个选题生成文案")
+    
+    for topic_info in generated_topics:
+        topic_record_id = topic_info["record_id"]
+        topic_title = topic_info["title"]
+        logging.info(f"正在为选题生成文案: {topic_title}")
+        
+        # 构建产品信息 - 使用飞书表格的正确字段名
+        product_info = ""
+        if products:
+            p = products[0]
+            product_name = extract_feishu_field(p, "产品名称")
+            material = extract_feishu_field(p, "材质说明")
+            selling_point = extract_feishu_field(p, "核心卖点")
+            price = extract_feishu_field(p, "价格区间")
+            audience = extract_feishu_field(p, "适合人群")
+            scenario = extract_feishu_field(p, "使用场景")
+            product_info = f"产品名称：{product_name}\n材质：{material}\n卖点：{selling_point}\n价格：{price}\n适合人群：{audience}\n使用场景：{scenario}"
+        
+        account_context = get_account_context(publish_account)
+        
+        user_prompt = f"""请为以下选题生成小红书发布文案：
+
+选题标题：{topic_title}
+发布账号：{publish_account}
+
+账号定位参考：
+{account_context}
+
+产品信息：
+{product_info}
+
+请直接输出JSON，包含：标题、正文(300-700字)、封面文案、标签。"""
+        
+        sp_template = Template(topic_post_cfg.get("sp", ""))
+        sp_content = sp_template.render({})
+        
+        response = llm_client.invoke(
+            messages=[
+                SystemMessage(content=sp_content),
+                HumanMessage(content=user_prompt)
+            ],
+            model=topic_post_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
+            temperature=topic_post_cfg.get("config", {}).get("temperature", 0.7),
+            max_completion_tokens=topic_post_cfg.get("config", {}).get("max_completion_tokens", 4096)
+        )
+        
+        try:
+            content = response.content if hasattr(response, 'content') else str(response)
+            # 解析JSON响应 - 多策略解析
+            post_data: dict = {}
+            
+            # 策略1: 尝试提取完整的JSON对象
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                try:
+                    post_data = json.loads(json_str)
+                except json.JSONDecodeError as e:
+                    logging.warning(f"JSON解析失败: {e}")
+                    # 策略2: 尝试修复JSON
+                    try:
+                        # 提取关键字段
+                        title_match = re.search(r'"标题"[：:]\s*["\']([^"\']+)["\']', content)
+                        body_match = re.search(r'"正文"[：:]\s*["\'](.+?)["\']', content, re.DOTALL)
+                        tags_match = re.search(r'"标签"[：:]\s*\[([^\]]+)\]', content)
+                        
+                        if title_match:
+                            post_data["标题"] = title_match.group(1)
+                        if body_match:
+                            post_data["正文"] = body_match.group(1)
+                        if tags_match:
+                            post_data["标签"] = tags_match.group(1)
+                    except Exception as e2:
+                        logging.error(f"JSON修复失败: {e2}")
+            
+            post_title = post_data.get("标题", topic_title)
+            # 如果标题是列表，取第一个作为发布标题
+            if isinstance(post_title, list):
+                post_title = post_title[0] if post_title else topic_title
+            post_body = post_data.get("正文", "")
+            # 如果正文是列表，取第一个
+            if isinstance(post_body, list):
+                post_body = post_body[0] if post_body else ""
+            cover_text = post_data.get("封面文案", "")
+            if isinstance(cover_text, list):
+                cover_text = cover_text[0] if cover_text else ""
+            post_tags = post_data.get("标签", "")
+            # 处理标签格式：飞书多行文本字段需要字符串，而不是数组
+            if isinstance(post_tags, list):
+                post_tags_str = " ".join(post_tags)
+            else:
+                post_tags_str = str(post_tags) if post_tags else ""
+            
+            # 暂存文案数据，等图片建议生成后合并写入
+            generated_contents.append({
+                "title": post_title,
+                "body": post_body,
+                "cover": cover_text,
+                "tags": post_tags_str,
+                "topic_record_id": topic_record_id
+            })
+            logging.info(f"文案生成成功（暂存）: {post_title}")
+            
+        except Exception as e:
+            logging.error(f"文案生成失败: {topic_title} - {e}")
+    
+    logging.info(f"✍️ 步骤2完成: 共生成 {len(generated_contents)} 篇文案")
+    
+    # ========== 步骤3: 生成图片建议 ==========
+    logging.info("📷 步骤3: 正在生成图片建议...")
+    
+    # 加载图片建议配置
+    cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_image_suggestion_cfg.json")
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        image_cfg = json.load(f)
+    
+    for content_info in generated_contents:
+        content_title = content_info["title"]
+        content_body = content_info["body"]
+        
+        user_prompt = f"""请为以下小红书内容生成图片拍摄建议：
+
+标题：{content_title}
+正文：{content_body[:200]}...
+
+请直接输出JSON，包含图片建议列表。"""
+        
+        sp_template = Template(image_cfg.get("sp", ""))
+        sp_content = sp_template.render({})
+        
+        response = llm_client.invoke(
+            messages=[
+                SystemMessage(content=sp_content),
+                HumanMessage(content=user_prompt)
+            ],
+            model=image_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
+            temperature=image_cfg.get("config", {}).get("temperature", 0.7),
+            max_completion_tokens=image_cfg.get("config", {}).get("max_completion_tokens", 4096)
+        )
+        
+        try:
+            img_content = response.content if hasattr(response, 'content') else str(response)
+            # 解析JSON响应
+            json_match = re.search(r'\{.*\}', img_content, re.DOTALL)
+            if json_match:
+                img_data = json.loads(json_match.group())
+            else:
+                img_data = {}
+            
+            suggestion_text = ""
+            if isinstance(img_data, dict):
+                suggestions = img_data.get("图片建议", img_data.get("建议", [img_data]))
+                for i, s in enumerate(suggestions[:5], 1):
+                    suggestion_text += f"{i}. {s.get('场景', s.get('描述', str(s)))}\n"
+            elif isinstance(img_data, list):
+                for i, s in enumerate(img_data[:5], 1):
+                    suggestion_text += f"{i}. {s.get('场景', s.get('描述', str(s)))}\n"
+            
+            # 合并正文和图片建议，然后写入飞书表格
+            full_body = content_body
+            if suggestion_text:
+                full_body = content_body + "\n\n📷 图片建议：\n" + suggestion_text
+            
+            content_info["body_with_image"] = full_body
+            
+        except Exception as e:
+            logging.error(f"图片建议生成失败: {content_title} - {e}")
+            content_info["body_with_image"] = content_body
+    
+    logging.info(f"📷 步骤3完成: 共生成 {len(generated_contents)} 条图片建议")
+    
+    # ========== 步骤4: 写入飞书表格 ==========
+    logging.info("📝 步骤4: 正在写入飞书表格...")
+    
+    writer4 = FeishuBitableWriter()
+    final_contents = []
+    
+    for content_info in generated_contents:
+        try:
+            full_body = content_info.get("body_with_image", content_info.get("body", ""))
+            
+            # 写入内容成品库
+            new_content_fields = {
+                "发布标题": content_info["title"],
+                "正文": full_body,
+                "发布标签": content_info.get("tags", ""),
+                "发布账号": publish_account,
+                "风险审核结果": "待审核",
+                "关联选题": [content_info.get("topic_record_id")]
+            }
+            
+            logging.info(f"正在写入: {content_info['title']}")
+            add_result = writer4.add_record(APP_TOKEN, CONTENT_TABLE, new_content_fields)
+            
+            if add_result.get('code') == 0:
+                content_record_id = add_result.get("data", {}).get("records", [{}])[0].get("record_id")
+                content_info["record_id"] = content_record_id
+                final_contents.append(content_info)
+                logging.info(f"✓ 写入成功: {content_info['title']}")
+            else:
+                logging.error(f"✗ 写入失败: {content_info['title']} - {add_result.get('msg', 'unknown')}")
+                
+        except Exception as e:
+            logging.error(f"写入失败: {content_info['title']} - {e}")
+    
+    logging.info(f"📝 步骤4完成: 共写入 {len(final_contents)} 条内容")
+    
+    # ========== 输出最终结果 ==========
+    result_text = f"🎉 一键生成完成！\n\n"
+    result_text += f"📊 统计：\n"
+    result_text += f"  • 生成选题：{len(generated_topics)} 条\n"
+    result_text += f"  • 生成文案：{len(final_contents)} 篇（已写入飞书）\n\n"
+    
+    if final_contents:
+        result_text += f"📝 最终成品预览：\n"
+        result_text += "=" * 50 + "\n"
+        
+        for i, content in enumerate(final_contents, 1):
+            result_text += f"\n【第{i}篇】\n"
+            result_text += f"标题：{content['title']}\n"
+            full_body = content.get('body_with_image', content.get('body', ''))
+            result_text += f"正文：{full_body[:500]}...\n"
+            result_text += f"标签：{content.get('tags', '无')}\n"
+            result_text += "-" * 30 + "\n"
+    
+    return WorkflowOutput(
+        workflow_type="一键生成",
+        result=result_text,
+        processed_count=len(generated_topics),
+        success_count=len(final_contents)
+    )
+
+
+# ============================================
 # 条件路由 & 图构建
 # ============================================
 def route_workflow(state: WorkflowInput) -> str:
@@ -1357,6 +1811,7 @@ builder = StateGraph(
     output_schema=WorkflowOutput
 )
 
+builder.add_node("一键生成", one_click_generate_workflow_node)
 builder.add_node("热点选题", feishu_hot_topic_workflow_node)
 builder.add_node("选题文案", feishu_topic_post_workflow_node)
 builder.add_node("客户故事", feishu_customer_story_workflow_node)
@@ -1368,6 +1823,7 @@ builder.add_conditional_edges(
     source="__start__",
     path=route_workflow,
     path_map={
+        "一键生成": "一键生成",
         "热点选题": "热点选题",
         "选题文案": "选题文案",
         "客户故事": "客户故事",
