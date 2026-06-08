@@ -1958,6 +1958,7 @@ builder.add_conditional_edges(
     }
 )
 
+builder.add_edge("一键生成", END)
 builder.add_edge("热点选题", END)
 builder.add_edge("选题文案", END)
 builder.add_edge("客户故事", END)
