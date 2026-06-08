@@ -41,6 +41,19 @@ FORBIDDEN_WORDS = [
     "旺财", "聚财", "镇宅", "化煞", "消灾", "祈福", "灵验",
 ]
 
+# 内容类型到薯账号映射
+CONTENT_TYPE_SHU_MAP = {
+    "家居/空间": ["@家居薯", "@生活薯"],
+    "文化/知识": ["@知识薯", "@人文薯"],
+    "穿搭/饰品": ["@时尚薯", "@穿搭薯"],
+    "普通内容": ["@薯条小助手"],
+    "节日热点": ["@生活薯", "@人文薯"],
+    "家具工艺": ["@家居薯", "@知识薯"],
+}
+
+# 默认薯账号（如果无法判断内容类型）
+DEFAULT_SHU_ACCOUNTS = ["@薯条小助手"]
+
 # 双账号配置
 ACCOUNT_CONFIG = {
     "灵楠阁品牌号": {
@@ -1553,6 +1566,21 @@ def one_click_generate_workflow_node(
                 else:
                     topic_official_list = []
                 
+                # 如果LLM没有生成@薯账号，根据内容栏目自动添加
+                if not topic_official_list and topic_sop:
+                    # SOP类型到内容类型的映射
+                    sop_to_content_type = {
+                        "SOP1热点": "节日热点",
+                        "SOP2产品": "家居/空间",
+                        "SOP3联动": "家居/空间",
+                        "SOP4创意": "普通内容",
+                        "SOP5故事": "文化/知识",
+                        "SOP6古装剧": "文化/知识",
+                        "SOP7工艺": "家具工艺"
+                    }
+                    content_type = sop_to_content_type.get(topic_sop, "普通内容")
+                    topic_official_list = SHU_ACCOUNT_MAP.get(content_type, ["@薯条小助手"])
+                
                 # 写入选题库（使用正确的飞书字段名）
                 new_topic_fields = {
                     "选题标题": topic_title,
@@ -1746,6 +1774,46 @@ def one_click_generate_workflow_node(
             if not official_accounts:
                 official_accounts = topic_info.get("official", "")
             
+            # 根据内容类型自动添加薯账号
+            content_category = topic_info.get("category", "")  # 内容栏目/SOP类型
+            content_style = topic_info.get("content_style", "")  # 内容风格
+            
+            # 判断内容类型并添加薯账号
+            potatoes_added = []
+            # 节日热点相关
+            if "热点" in content_category or "热点" in content_style or "节日" in topic_title or "端午" in topic_title:
+                potatoes_added.extend(POTATO_ACCOUNTS["节日热点"])
+            # 家具工艺相关
+            if "工艺" in content_category or "工艺" in content_style or "榫卯" in post_body or "打磨" in post_body:
+                potatoes_added.extend(POTATO_ACCOUNTS["家具工艺"])
+            # 家居空间相关
+            if "空间" in topic_title or "茶空间" in topic_title or "家居" in post_body or "家具" in topic_title:
+                potatoes_added.extend(POTATO_ACCOUNTS["家居/空间"])
+            # 文化知识相关
+            if "文化" in content_category or "知识" in content_style or "考工记" in post_body or "明式" in post_body:
+                potatoes_added.extend(POTATO_ACCOUNTS["文化/知识"])
+            # 默认添加薯条小助手（普通内容）
+            if not potatoes_added:
+                potatoes_added.extend(POTATO_ACCOUNTS["普通内容"])
+            
+            # 合并发布账号、LLM生成的@账号和自动添加的薯账号
+            all_accounts = []
+            # 添加发布账号
+            if publish_account:
+                all_accounts.append(f"@{publish_account}")
+            # 添加LLM生成的薯账号（去除重复）
+            if official_accounts:
+                for acc in official_accounts.split():
+                    if acc not in all_accounts:
+                        all_accounts.append(acc)
+            # 添加根据内容类型自动添加的薯账号（去除重复）
+            for potato in potatoes_added:
+                if potato not in all_accounts:
+                    all_accounts.append(potato)
+            
+            official_accounts = " ".join(all_accounts)
+            logging.info(f"薯账号列表: {official_accounts}")
+            
             # 暂存文案数据，等图片建议生成后合并写入
             generated_contents.append({
                 "title": post_title,
@@ -1838,7 +1906,7 @@ def one_click_generate_workflow_node(
 
 【标签】{content_info.get('tags', '')}
 
-【@官方号】{publish_account}"""
+【@官方号】{content_info.get('official_accounts', publish_account)}"""
 
             # 写入内容成品库（使用实际存在的字段）
             new_content_fields = {
