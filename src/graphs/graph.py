@@ -101,6 +101,25 @@ SHARED_BRAND = """灵楠阁：金丝楠木中式生活美学品牌。产品涵�
 - 金丝楠的历史锚点：明清皇家御用（故宫、太和殿）、蜀地老料、"东方神木"
 - 避免的错误：不要编造不存在的古诗文、不要张冠李戴"""
 
+# 薯账号映射：根据内容类型自动添加对应的薯账号
+SHU_ACCOUNT_MAP = {
+    "家居/空间": ["@家居薯", "@生活薯"],
+    "文化/知识": ["@知识薯", "@人文薯"],
+    "穿搭/饰品": ["@时尚薯", "@穿搭薯"],
+    "普通内容": ["@薯条小助手"],
+    "节日热点": ["@生活薯", "@人文薯"],
+    "家具工艺": ["@家居薯", "@知识薯"],
+}
+
+# 简化版：根据内容栏目/SOP类型映射
+POTATO_ACCOUNTS = {
+    "节日热点": ["@生活薯", "@人文薯"],
+    "家具工艺": ["@家居薯", "@知识薯"],
+    "家居/空间": ["@家居薯", "@生活薯"],
+    "文化/知识": ["@知识薯", "@人文薯"],
+    "普通内容": ["@薯条小助手"],
+}
+
 
 # ============================================
 # System Prompts（含 few-shot 示例）
@@ -1866,8 +1885,12 @@ def one_click_generate_workflow_node(
         try:
             img_content = response.content if hasattr(response, 'content') else str(response)
             
+            # 确保是字符串类型
+            if isinstance(img_content, list):
+                img_content = str(img_content[0]) if img_content else ""
+            
             # LLM 返回的是文本格式（一、二、三...），直接作为图片建议
-            suggestion_text = img_content.strip()
+            suggestion_text = str(img_content).strip()
             
             # 合并正文和图片建议，然后写入飞书表格
             full_body = content_body
