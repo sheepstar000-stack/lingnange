@@ -1986,20 +1986,27 @@ def one_click_generate_workflow_node(
             # 使用纯正文（不含图片建议），避免重复
             pure_body = content_info.get("body", "")
             
-            # 构建内容整理格式的文本
-            content_organized = f"""【标题】{content_info['title']}
+            # 格式化图片建议（如果是JSON格式则美化输出）
+            image_suggestion_raw = content_info.get('image_suggestion', '')
+            if isinstance(image_suggestion_raw, dict):
+                image_suggestion_str = json.dumps(image_suggestion_raw, ensure_ascii=False, indent=2)
+            else:
+                image_suggestion_str = str(image_suggestion_raw) if image_suggestion_raw else ''
+            
+            # 构建内容整理格式的文本（使用Markdown兼容格式）
+            content_organized = f"""**标题：**{content_info['title']}
 
-【正文】
+**正文：**
 {pure_body}
 
-【封面文案】{content_info.get('cover_text', '')}
+**封面文案：**{content_info.get('cover_text', '')}
 
-【图片建议】
-{content_info.get('image_suggestion', '')}
+**图片建议：**
+{image_suggestion_str}
 
-【标签】{content_info.get('tags', '')}
+**标签：**{content_info.get('tags', '')}
 
-【@官方号】{content_info.get('official_accounts', publish_account)}"""
+**@官方号：**{content_info.get('official_accounts', publish_account)}"""
 
             # 写入内容成品库（正文字段使用完整内容，包含图片建议）
             body_with_image = content_info.get("body_with_image", content_info.get("body", ""))
