@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>灵楠阁 · 金丝楠木</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --wood-deep: #1a0f07;
+    --wood-dark: #2d1a0e;
+    --wood-mid: #4a2c1a;
+    --gold: #c9a96e;
+    --gold-light: #e8d5b0;
+    --gold-pale: #f5ecd7;
+    --cream: #f5f0e8;
+    --text-primary: #e8dcc8;
+    --text-secondary: #b8a88a;
+    --text-muted: #8a7a62;
+    --surface: #231510;
+    --surface-light: #34241a;
+    --border: #3d2a1a;
+    --radius: 6px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--wood-deep);
+    color: var(--text-primary);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ── Nav ── */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 20px 48px;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: background .4s, padding .4s;
+  }
+  .nav.scrolled {
+    background: rgba(26, 15, 7, 0.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    padding: 14px 48px;
+    border-bottom: 1px solid rgba(201, 169, 110, 0.08);
+  }
+  .nav-brand {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 22px; font-weight: 600;
+    color: var(--gold);
+    letter-spacing: 4px;
+    text-decoration: none;
+  }
+  .nav-links { display: flex; gap: 32px; align-items: center; }
+  .nav-links a {
+    font-size: 13px; color: var(--text-secondary);
+    text-decoration: none; letter-spacing: 2px;
+    transition: color .3s;
+  }
+  .nav-links a:hover { color: var(--gold); }
+
+  /* ── Hero ── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .hero-bg {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse at 60% 40%, rgba(201, 169, 110, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse at 30% 70%, rgba(74, 44, 26, 0.6) 0%, transparent 50%),
+      linear-gradient(180deg, #1a0f07 0%, #2d1a0e 40%, #1a0f07 100%);
+    z-index: 0;
+  }
+  .hero-bg::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(201, 169, 110, 0.015) 2px,
+      rgba(201, 169, 110, 0.015) 4px
+    );
+  }
+  .hero-content {
+    position: relative; z-index: 2;
+    text-align: center;
+    padding: 0 24px;
+  }
+  .hero-eyebrow {
+    font-size: 13px; letter-spacing: 6px;
+    color: var(--gold);
+    margin-bottom: 24px;
+    text-transform: uppercase;
+  }
+  .hero-title {
+    font-family: 'Noto Serif SC', serif;
+    font-size: clamp(42px, 7vw, 80px);
+    font-weight: 600;
+    color: var(--gold-light);
+    line-height: 1.15;
+    letter-spacing: 8px;
+    margin-bottom: 20px;
+  }
+  .hero-subtitle {
+    font-size: clamp(15px, 2vw, 18px);
+    color: var(--text-secondary);
+    letter-spacing: 4px;
+    font-weight: 300;
+  }
+  .hero-scroll {
+    position: absolute; bottom: 40px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 2;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 8px;
+    opacity: 0.6;
+    animation: float 2s ease-in-out infinite;
+  }
+  .hero-scroll span { font-size: 11px; letter-spacing: 3px; color: var(--text-muted); }
+  .hero-scroll-line {
+    width: 1px; height: 40px;
+    background: linear-gradient(180deg, var(--gold), transparent);
+  }
+  @keyframes float {
+    0%, 100% { transform: translateX(-50%) translateY(0); }
+    50% { transform: translateX(-50%) translateY(8px); }
+  }
+
+  /* ── Section Common ── */
+  section { padding: 100px 48px; }
+  .section-tag {
+    font-size: 12px; letter-spacing: 5px;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .section-title {
+    font-family: 'Noto Serif SC', serif;
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 600;
+    color: var(--gold-light);
+    letter-spacing: 4px;
+    margin-bottom: 16px;
+  }
+  .section-desc {
+    font-size: 15px; color: var(--text-secondary);
+    max-width: 520px; line-height: 1.8;
+    font-weight: 300;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  /* ── Intro ── */
+  .intro { background: var(--surface); }
+  .intro-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 80px; align-items: center;
+  }
+  .intro-visual {
+    aspect-ratio: 4/5;
+    background: linear-gradient(135deg, var(--wood-mid) 0%, var(--wood-dark) 50%, var(--wood-deep) 100%);
+    border-radius: var(--radius);
+    position: relative; overflow: hidden;
+  }
+  .intro-visual::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(201, 169, 110, 0.03) 3px,
+      rgba(201, 169, 110, 0.03) 6px
+    );
+  }
+  .intro-visual::after {
+    content: '金丝楠木';
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 28px; letter-spacing: 12px;
+    color: var(--gold);
+    opacity: 0.5;
+    text-orientation: upright;
+    writing-mode: vertical-rl;
+  }
+  .intro-text p {
+    font-size: 15px; color: var(--text-secondary);
+    line-height: 2; margin-bottom: 24px;
+    font-weight: 300;
+  }
+
+  /* ── Generate Section ── */
+  .generate {
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(201, 169, 110, 0.08) 0%, transparent 60%),
+      var(--wood-deep);
+  }
+  .generate-layout {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 48px; align-items: start;
+  }
+  .generate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 40px;
+  }
+  .generate-card.form-card {  }
+  .generate-card.result-card {
+    min-height: 400px;
+    position: relative;
+  }
+  .generate-card h3 {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 20px; font-weight: 600;
+    color: var(--gold-light);
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+  }
+  .generate-card .card-sub {
+    font-size: 13px; color: var(--text-muted);
+    margin-bottom: 28px;
+    font-weight: 300;
+  }
+
+  /* Form */
+  .form-group { margin-bottom: 20px; }
+  .form-group label {
+    display: block;
+    font-size: 12px; letter-spacing: 2px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+  .form-group select, .form-group textarea {
+    width: 100%;
+    background: var(--wood-deep);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-family: 'Noto Sans SC', sans-serif;
+    font-size: 14px;
+    color: var(--text-primary);
+    transition: border-color .3s, box-shadow .3s;
+    resize: vertical;
+  }
+  .form-group select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23c9a96e' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+    cursor: pointer;
+  }
+  .form-group select:focus, .form-group textarea:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 2px rgba(201, 169, 110, 0.1);
+  }
+  .form-group select option {
+    background: var(--wood-deep);
+    color: var(--text-primary);
+  }
+  .form-group textarea { min-height: 100px; }
+
+  .btn-generate {
+    width: 100%;
+    background: linear-gradient(135deg, var(--gold) 0%, #b8944a 100%);
+    color: var(--wood-deep);
+    border: none;
+    border-radius: var(--radius);
+    padding: 14px;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 15px; font-weight: 600;
+    letter-spacing: 4px;
+    cursor: pointer;
+    transition: all .3s;
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px;
+  }
+  .btn-generate:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .btn-generate:active { transform: translateY(0); }
+  .btn-generate:disabled {
+    opacity: 0.5; cursor: not-allowed;
+    filter: none; transform: none;
+  }
+  .btn-generate .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid rgba(26, 15, 7, 0.3);
+    border-top-color: var(--wood-deep);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Result */
+  .result-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 260px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .result-placeholder .icon-ring {
+    width: 56px; height: 56px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px;
+    font-size: 20px;
+  }
+  .result-placeholder p { font-size: 14px; font-weight: 300; letter-spacing: 2px; }
+
+  .result-content {
+    font-size: 14px; line-height: 2;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-weight: 300;
+    max-height: 500px;
+    overflow-y: auto;
+  }
+  .result-content::-webkit-scrollbar { width: 4px; }
+  .result-content::-webkit-scrollbar-track { background: transparent; }
+  .result-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .result-error {
+    color: #8b4a4a;
+    font-size: 14px;
+    text-align: center;
+    padding: 40px 20px;
+  }
+
+  .result-actions {
+    display: flex; gap: 10px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .result-actions button {
+    flex: 1;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 16px;
+    font-size: 12px; letter-spacing: 2px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all .3s;
+    font-family: 'Noto Sans SC', sans-serif;
+  }
+  .result-actions button:hover {
+    border-color: var(--gold);
+    color: var(--gold);
+  }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 24px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--gold);
+    color: var(--wood-deep);
+    padding: 10px 24px;
+    border-radius: var(--radius);
+    font-size: 13px; font-weight: 500;
+    letter-spacing: 1px;
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s;
+  }
+  .toast.show { opacity: 1; }
+
+  /* ── Footer ── */
+  footer {
+    text-align: center;
+    padding: 48px;
+    border-top: 1px solid rgba(201, 169, 110, 0.06);
+    font-size: 12px; color: var(--text-muted);
+    letter-spacing: 2px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 860px) {
+    .nav { padding: 16px 24px; }
+    .nav.scrolled { padding: 12px 24px; }
+    .nav-links { display: none; }
+
+    section { padding: 64px 24px; }
+
+    .intro-grid { grid-template-columns: 1fr; gap: 40px; }
+    .intro-visual { aspect-ratio: 3/2; }
+
+    .generate-layout { grid-template-columns: 1fr; }
+
+    .hero-title { letter-spacing: 4px; }
+    .hero-eyebrow { letter-spacing: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <a href="#" class="nav-brand">灵楠阁</a>
+  <div class="nav-links">
+    <a href="#intro">关于</a>
+    <a href="#generate">内容生成</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-content">
+    <div class="hero-eyebrow">金丝楠木 · 灵楠阁</div>
+    <h1 class="hero-title">金丝楠木</h1>
+    <p class="hero-subtitle">千年沉淀，温润如玉</p>
+  </div>
+  <div class="hero-scroll">
+    <span>向下探索</span>
+    <div class="hero-scroll-line"></div>
+  </div>
+</section>
+
+<section class="intro" id="intro">
+  <div class="container">
+    <div class="section-tag">ABOUT</div>
+    <div class="intro-grid">
+      <div class="intro-visual"></div>
+      <div class="intro-text">
+        <h2 class="section-title">木中之冠</h2>
+        <p>
+          金丝楠木，自古为皇家御用之材。木质细腻温润，纹理间闪烁着金色丝线般的天然光泽，历经千年而不腐不蛀。
+        </p>
+        <p>
+          灵楠阁甄选上乘金丝楠木原料，以匠心工艺打造每一件作品，让这份来自自然的馈赠，在现代生活中延续其恒久的价值与美感。
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="generate" id="generate">
+  <div class="container">
+    <div class="section-tag">AI CONTENT</div>
+    <h2 class="section-title" style="margin-bottom:40px;">AI 内容生成</h2>
+    <div class="generate-layout">
+      <div class="generate-card form-card">
+        <h3>一键生成</h3>
+        <p class="card-sub">智能创作金丝楠木相关内容</p>
+        <div class="form-group">
+          <label>生成类型</label>
+          <select id="workflowType">
+            <option value="一键生成">一键生成 — 完整内容</option>
+            <option value="热点选题">热点选题 — 选题方案</option>
+            <option value="选题文案">选题文案 — 发布文案</option>
+            <option value="图片建议">图片建议 — 配图方案</option>
+            <option value="内容整理">内容整理 — 内容整合</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>补充说明（可选）</label>
+          <textarea id="extraPrompt" placeholder="例如：针对中高端收藏家群体，推荐一款金丝楠木手串…"></textarea>
+        </div>
+        <button class="btn-generate" id="btnGenerate" onclick="runGenerate()">
+          开始生成
+        </button>
+      </div>
+
+      <div class="generate-card result-card" id="resultCard">
+        <h3>生成结果</h3>
+        <p class="card-sub" id="resultSub">等待生成…</p>
+        <div class="result-placeholder" id="resultPlaceholder">
+          <div class="icon-ring">✦</div>
+          <p>选择类型后点击生成</p>
+        </div>
+        <div class="result-content" id="resultContent" style="display:none;"></div>
+        <div class="result-error" id="resultError" style="display:none;"></div>
+        <div class="result-actions" id="resultActions" style="display:none;">
+          <button onclick="copyResult()">复制结果</button>
+          <button onclick="downloadResult()">下载文本</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  灵楠阁 LINGNANGE · 金丝楠木
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API_URL = 'https://jv7dr2vk3d.coze.site/run';
+const TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImMwNTQ1ZjM1LWY0M2YtNDU1OS1iNmUzLTc3ODc1MTFiZDc4YiJ9.eyJpc3MiOiJodHRwczovL2FwaS5jb3plLmNuIiwiYXVkIjpbIlpoZFlSU0NXMVlLZEhvNmNaVWlDaXpjMVY0M2dGUkRvIl0sImV4cCI6ODIxMDI2Njg3Njc5OSwiaWF0IjoxNzgwODk3MzUxLCJzdWIiOiJzcGlmZmU6Ly9hcGkuY296ZS5jbi93b3JrbG9hZF9pZGVudGl0eS9pZDo3NjQ3MDEzMzg4NjAxNTI0MjI0Iiwic3JjIjoiaW5ib3VuZF9hdXRoX2FjY2Vzc190b2tlbl9pZDo3NjQ4ODk1ODgzMTIzMDk3NjU0In0.Ei_mEevkxygZZsQ5OYfwsB_aQc8SnzXyjaB7LMBrll2GgrNLXHhOKyZ3VebGQhnO9mCVbf9INxGIQc22NSqmHOZh7j1EAIkgHwYGrQjQUYr_dZ8BDbI8K3LzkWlmP9bhghExw2xhUNNiq7We_RtA2W9R4x7jMbqGAoWe8uQil39MtvtC8ABrBeqbOBRoHVMCZB0O-yjY5v0jflUzGXbWSudBW80KEhUp6cRcZYp87kCkL7SEyIxDrW1gCWUdpdjuO6E55bGStOHjomDg-_iuT2yjlLNFzgZ5h1OcmtMt48b5oiDZijciSFswDt7GCH4h0P99IbsNDPXKeAadCqHb7A';
+
+let lastResult = '';
+let lastResultName = '';
+
+// Nav scroll effect
+window.addEventListener('scroll', () => {
+  document.getElementById('nav').classList.toggle('scrolled', window.scrollY > 60);
+});
+
+// Generate
+async function runGenerate() {
+  const wfType = document.getElementById('workflowType').value;
+  const extra = document.getElementById('extraPrompt').value.trim();
+  const btn = document.getElementById('btnGenerate');
+
+  // Show loading
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> 生成中…';
+
+  hideResult();
+  document.getElementById('resultSub').textContent = '正在生成「' + wfType + '」…';
+
+  try {
+    const body = { workflow_type: wfType };
+    if (extra) body.extra_prompt = extra;
+
+    const resp = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error('HTTP ' + resp.status + ': ' + txt.slice(0, 200));
+    }
+
+    const json = await resp.json();
+
+    // Parse Coze response
+    let output = '';
+    if (typeof json === 'string') {
+      output = json;
+    } else if (json.data) {
+      if (typeof json.data === 'string') {
+        output = json.data;
+      } else if (typeof json.data === 'object') {
+        // Try to extract text content
+        output = json.data.output || json.data.content || json.data.text || JSON.stringify(json.data, null, 2);
+      }
+    } else if (json.output) {
+      output = json.output;
+    } else if (json.content) {
+      output = json.content;
+    } else {
+      output = JSON.stringify(json, null, 2);
+    }
+
+    lastResult = output;
+    lastResultName = wfType;
+
+    showResult(output);
+
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '开始生成';
+  }
+}
+
+function hideResult() {
+  document.getElementById('resultPlaceholder').style.display = 'none';
+  document.getElementById('resultContent').style.display = 'none';
+  document.getElementById('resultError').style.display = 'none';
+  document.getElementById('resultActions').style.display = 'none';
+}
+
+function showResult(text) {
+  hideResult();
+  const el = document.getElementById('resultContent');
+  el.textContent = text;
+  el.style.display = 'block';
+  document.getElementById('resultActions').style.display = 'flex';
+  document.getElementById('resultSub').textContent = '生成完成 · ' + lastResultName;
+}
+
+function showError(msg) {
+  hideResult();
+  const el = document.getElementById('resultError');
+  el.textContent = '生成失败：' + msg;
+  el.style.display = 'block';
+  document.getElementById('resultSub').textContent = '生成失败';
+}
+
+function copyResult() {
+  navigator.clipboard.writeText(lastResult).then(() => {
+    showToast('已复制到剪贴板');
+  }).catch(() => {
+    showToast('复制失败，请手动选择');
+  });
+}
+
+function downloadResult() {
+  const blob = new Blob([lastResult], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '灵楠阁_' + lastResultName + '_' + new Date().toISOString().slice(0,10) + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('已下载');
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2000);
+}
+</script>
+</body>
+</html>
