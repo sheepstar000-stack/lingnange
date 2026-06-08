@@ -1511,10 +1511,12 @@ def one_click_generate_workflow_node(
             
             for topic_item in topics_data[:3]:
                 topic_title = topic_item.get("标题", "")
-                topic_sop = topic_item.get("SOP类型", "")
-                topic_reason = topic_item.get("选题理由", "")
-                topic_cover = topic_item.get("封面方向", "")
-                topic_tags = topic_item.get("标签", "")
+                topic_sop = topic_item.get("内容栏目", "") or topic_item.get("SOP类型", "")
+                topic_reason = topic_item.get("切入角度", "") or topic_item.get("选题理由", "")
+                topic_cover_text = topic_item.get("封面文案建议", "") or topic_item.get("封面文案", "")
+                topic_cover_image = topic_item.get("封面图方向", "") or topic_item.get("封面方向", "")
+                topic_tags = topic_item.get("预期标签", "") or topic_item.get("标签", "")
+                topic_official = topic_item.get("预期@薯", "") or topic_item.get("@薯账号", "")
                 
                 # 处理标签格式：飞书多行文本字段需要字符串，而不是数组
                 if isinstance(topic_tags, list):
@@ -1522,16 +1524,33 @@ def one_click_generate_workflow_node(
                 else:
                     topic_tags_str = str(topic_tags) if topic_tags else ""
                 
+                # 处理@薯账号格式：飞书多选字段需要字符串数组
+                if isinstance(topic_official, list):
+                    topic_official_list = [str(x) for x in topic_official if x]
+                elif topic_official and str(topic_official).strip():
+                    # 单个字符串，需要拆分
+                    topic_official_str = str(topic_official)
+                    if "," in topic_official_str or "、" in topic_official_str:
+                        topic_official_list = [x.strip() for x in topic_official_str.replace("、", ",").split(",") if x.strip()]
+                    else:
+                        topic_official_list = [topic_official_str.strip()]
+                else:
+                    topic_official_list = []
+                
                 # 写入选题库（使用正确的飞书字段名）
                 new_topic_fields = {
                     "选题标题": topic_title,
                     "内容栏目": topic_sop,
                     "目标账号": publish_account,
                     "切入角度": topic_reason,
-                    "封面图方向": topic_cover,
+                    "封面文案建议": topic_cover_text,
+                    "封面图方向": topic_cover_image,
                     "预期标签": topic_tags_str,
                     "选题状态": "通过",  # 自动审核通过
                 }
+                # 只有有值时才添加预期@薯字段
+                if topic_official_list:
+                    new_topic_fields["预期@薯"] = topic_official_list
                 
                 try:
                     logging.info(f"正在写入选题: {topic_title}")
@@ -1543,7 +1562,11 @@ def one_click_generate_workflow_node(
                     generated_topics.append({
                         "record_id": new_record_id,
                         "title": topic_title,
-                        "sop": topic_sop
+                        "sop": topic_sop,
+                        "cover_text": topic_cover_text,  # 封面文案建议
+                        "cover_image": topic_cover_image,  # 封面图方向
+                        "tags": topic_tags_str,
+                        "official": topic_official
                     })
                     logging.info(f"选题写入成功: {topic_title}")
                 except Exception as e:
@@ -1695,11 +1718,24 @@ def one_click_generate_workflow_node(
                 post_tags_str = str(post_tags) if post_tags else ""
             official_accounts = post_data.get("@官方号", "")
             
+            # 如果LLM没有生成封面文案，使用选题的封面文案建议
+            if not cover_text:
+                cover_text = topic_info.get("cover_text", "")
+            
+            # 如果LLM没有生成标签，使用选题的预期标签
+            if not post_tags_str:
+                post_tags_str = topic_info.get("tags", "")
+            
+            # 如果LLM没有生成@官方号，使用选题的预期@薯
+            if not official_accounts:
+                official_accounts = topic_info.get("official", "")
+            
             # 暂存文案数据，等图片建议生成后合并写入
             generated_contents.append({
                 "title": post_title,
                 "body": post_body,
                 "cover_text": cover_text,
+                "cover_image": topic_info.get("cover_image", ""),  # 封面图方向
                 "tags": post_tags_str,
                 "official_accounts": official_accounts,
                 "topic_record_id": topic_record_id
