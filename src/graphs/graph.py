@@ -1465,11 +1465,30 @@ def one_click_generate_workflow_node(
         hot_topic_date = extract_feishu_field(hot_fields, "热点日期")
         hot_topic_type = extract_feishu_field(hot_fields, "热点类型")
         hot_angles = extract_feishu_field(hot_fields, "编辑建议角度")
-        logging.info(f"  热点名称: {hot_topic_name}, 类型: {hot_topic_type}")
+        # 读取热点日历中的关联产品字段
+        hot_linked_product = extract_feishu_field(hot_fields, "关联产品") or extract_feishu_field(hot_fields, "关联产品关键词")
+        logging.info(f"  热点名称: {hot_topic_name}, 类型: {hot_topic_type}, 关联产品: {hot_linked_product}")
         
         if not hot_topic_name:
             logging.info("  热点名称为空，跳过")
             continue
+        
+        # 根据关联产品关键词筛选产品
+        matched_products = products
+        if hot_linked_product:
+            # 尝试匹配产品名称包含关键词的产品
+            matched_products = [p for p in products if hot_linked_product in p.get("名称", "") or p.get("名称", "") in hot_linked_product]
+            if not matched_products:
+                # 如果没有精确匹配，使用所有产品但传递关联产品关键词给LLM
+                matched_products = products
+            logging.info(f"  根据关键词 '{hot_linked_product}' 匹配到 {len(matched_products)} 个产品")
+        
+        # 构建匹配产品的摘要
+        matched_product_summary = ""
+        for p in matched_products:
+            matched_product_summary += f"- {p.get('名称', '')}（{p.get('分类', '')}类）：材质{p.get('材质', '')}，卖点{p.get('卖点', '')}，{p.get('价格', '')}价位，适合{p.get('人群', '')}人群，{p.get('场景', '')}场景\n"
+        if not matched_product_summary:
+            matched_product_summary = product_summary
         
         user_prompt = f"""请根据以下信息为指定账号生成3个选题方案：
 
@@ -1479,9 +1498,12 @@ def one_click_generate_workflow_node(
 热点日期：{hot_topic_date}
 热点类型：{hot_topic_type if hot_topic_type else '无'}
 编辑建议角度：{hot_angles if hot_angles else '无，请自行发挥'}
+关联产品关键词：{hot_linked_product if hot_linked_product else '无特定关联，请从可用产品中选择'}
 
 可用产品列表：
-{product_summary}
+{matched_product_summary}
+
+重要提示：生成的选题标题必须与热点名称和热点日期相关！例如，如果热点是"端午节"，标题必须包含端午相关内容，不能使用其他节日主题。
 
 请直接输出JSON数组，每个选题包含：标题、SOP类型、账号、选题理由、封面方向、标签。"""
         
@@ -1622,6 +1644,10 @@ def one_click_generate_workflow_node(
                     logging.info(f"飞书写入响应: {add_result.get('code', 'unknown')}")
                     new_record_id = add_result.get("data", {}).get("records", [{}])[0].get("record_id")
                     topic_record_ids.append(new_record_id)
+                    
+                    # 提取LLM生成的关联产品关键词
+                    topic_product_keyword = topic_item.get("关联产品关键词", "") or hot_linked_product
+                    
                     generated_topics.append({
                         "record_id": new_record_id,
                         "title": topic_title,
@@ -1629,9 +1655,14 @@ def one_click_generate_workflow_node(
                         "cover_text": topic_cover_text,  # 封面文案建议
                         "cover_image": topic_cover_image,  # 封面图方向
                         "tags": topic_tags_str,
-                        "official": topic_official
+                        "official": topic_official,
+                        # 新增：热点信息和关联产品关键词
+                        "hot_topic_name": hot_topic_name,
+                        "hot_topic_date": hot_topic_date,
+                        "hot_topic_type": hot_topic_type,
+                        "product_keyword": topic_product_keyword
                     })
-                    logging.info(f"选题写入成功: {topic_title}")
+                    logging.info(f"选题写入成功: {topic_title}, 关联产品关键词: {topic_product_keyword}")
                 except Exception as e:
                     logging.error(f"选题写入失败: {topic_title} - {e}")
         except Exception as e:
@@ -1654,21 +1685,52 @@ def one_click_generate_workflow_node(
     for topic_info in generated_topics:
         topic_record_id = topic_info["record_id"]
         topic_title = topic_info["title"]
-        logging.info(f"正在为选题生成文案: {topic_title}")
+        # 获取热点信息和关联产品关键词
+        hot_topic_name = topic_info.get("hot_topic_name", "")
+        hot_topic_date = topic_info.get("hot_topic_date", "")
+        product_keyword = topic_info.get("product_keyword", "")
+        logging.info(f"正在为选题生成文案: {topic_title}, 热点: {hot_topic_name}, 关联产品: {product_keyword}")
         
-        # 构建产品信息 - 使用飞书表格的正确字段名
+        # 根据关联产品关键词匹配产品
+        matched_product = None
+        if product_keyword and products:
+            # 尝试精确匹配或部分匹配
+            for p in products:
+                prod_name = p.get("名称", "")
+                if product_keyword in prod_name or prod_name in product_keyword:
+                    matched_product = p
+                    break
+            # 如果没有匹配到，使用第一个产品
+            if not matched_product:
+                matched_product = products[0]
+        elif products:
+            matched_product = products[0]
+        
+        # 构建产品信息
         product_info = ""
-        if products:
-            p = products[0]
-            product_name = extract_feishu_field(p, "产品名称")
-            material = extract_feishu_field(p, "材质说明")
-            selling_point = extract_feishu_field(p, "核心卖点")
-            price = extract_feishu_field(p, "价格区间")
-            audience = extract_feishu_field(p, "适合人群")
-            scenario = extract_feishu_field(p, "使用场景")
-            product_info = f"产品名称：{product_name}\n材质：{material}\n卖点：{selling_point}\n价格：{price}\n适合人群：{audience}\n使用场景：{scenario}"
+        matched_product_name = ""
+        if matched_product:
+            matched_product_name = matched_product.get("名称", "")
+            material = matched_product.get("材质", "")
+            selling_point = matched_product.get("卖点", "")
+            price = matched_product.get("价格", "")
+            audience = matched_product.get("人群", "")
+            scenario = matched_product.get("场景", "")
+            product_info = f"产品名称：{matched_product_name}\n材质：{material}\n卖点：{selling_point}\n价格：{price}\n适合人群：{audience}\n使用场景：{scenario}"
+            logging.info(f"使用产品: {matched_product_name}")
         
         account_context = get_account_context(publish_account)
+        
+        # 构建热点提示（如果有热点信息）
+        hot_topic_hint = ""
+        if hot_topic_name:
+            hot_topic_hint = f"""
+【重要】热点信息：
+- 热点名称：{hot_topic_name}
+- 热点日期：{hot_topic_date}
+- 你的文案必须紧扣热点主题"{hot_topic_name}"，标题和正文内容都要与这个热点相关！
+- 如果热点是某个节日（如端午节、情人节等），文案内容必须是该节日主题，不能使用其他节日！
+"""
         
         user_prompt = f"""请为以下选题生成小红书发布文案：
 
@@ -1680,7 +1742,7 @@ def one_click_generate_workflow_node(
 
 产品信息：
 {product_info}
-
+{hot_topic_hint}
 请直接输出JSON，包含：标题、正文(300-700字)、封面文案、标签。"""
         
         sp_template = Template(topic_post_cfg.get("sp", ""))
