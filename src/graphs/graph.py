@@ -1459,8 +1459,8 @@ def one_click_generate_workflow_node(
         hot_topic_date = extract_feishu_field(hot_fields, "热点日期")
         hot_topic_type = extract_feishu_field(hot_fields, "热点类型")
         hot_angles = extract_feishu_field(hot_fields, "编辑建议角度")
-        # 读取热点日历中的账号和关联产品字段
-        hot_account = extract_feishu_field(hot_fields, "账号") or extract_feishu_field(hot_fields, "目标账号") or ""
+        # 读取热点日历中的账号和关联产品字段（统一使用"发布账号"字段名）
+        hot_account = extract_feishu_field(hot_fields, "发布账号") or extract_feishu_field(hot_fields, "适合账号") or extract_feishu_field(hot_fields, "账号") or ""
         hot_linked_product_raw = extract_feishu_field(hot_fields, "关联产品") or extract_feishu_field(hot_fields, "关联产品关键词")
         logging.info(f"  热点名称: {hot_topic_name}, 类型: {hot_topic_type}, 账号: {hot_account}, 关联产品原始数据: {hot_linked_product_raw}")
         
