@@ -2028,41 +2028,114 @@ def one_click_generate_workflow_node(
     
     logging.info(f"📝 步骤4完成: 共写入 {len(final_contents)} 条内容")
     
-    # ========== 输出最终结果（按内容整理格式）==========
+    # ========== 从飞书表格读取"内容整理"字段作为最终成品 ==========
+    logging.info("📖 步骤5: 从飞书表格读取内容整理字段...")
+    
+    # 构建最终结果文本
     result_text = f"🎉 一键生成完成！\n\n"
     result_text += f"📊 统计：\n"
     result_text += f"  • 生成选题：{len(generated_topics)} 条\n"
     result_text += f"  • 生成文案：{len(final_contents)} 篇（已写入飞书）\n\n"
     
     if final_contents:
-        result_text += f"📝 最终成品（内容整理格式）：\n"
+        result_text += f"📝 最终成品（从飞书表格内容整理字段读取）：\n"
         result_text += "=" * 50 + "\n"
         
-        for i, content in enumerate(final_contents, 1):
-            title = content.get('title', '')
-            body = content.get('body', '')
-            image_suggestion = content.get('image_suggestion', '')
-            tags = content.get('tags', '')
-            cover_text = content.get('cover_text', '')  # 封面文案
-            official_accounts_display = content.get('official_accounts', publish_account)  # 包含薯账号
-            
-            # 按内容整理的格式输出
-            result_text += f"\n【第{i}篇】\n"
-            result_text += f"""【标题】{title}
+        # 收集所有记录ID，使用批量获取方法
+        content_record_ids = [c.get("record_id", "") for c in final_contents if c.get("record_id")]
+        
+        if content_record_ids:
+            try:
+                # 使用已有的 writer4 的 list_records 方法批量获取记录
+                records_response = writer4.list_records(
+                    app_token=APP_TOKEN,
+                    table_id=CONTENT_TABLE,
+                    record_ids=content_record_ids
+                )
+                
+                if records_response.get('code') == 0:
+                    records = records_response.get('data', {}).get('records', [])
+                    for i, record in enumerate(records, 1):
+                        fields = record.get('fields', {})
+                        # 读取飞书表格中的"内容整理"字段
+                        content_organized_raw = fields.get('内容整理', '')
+                        
+                        # 解析飞书多行文本格式: [{'text': '内容', 'type': 'text'}]
+                        content_organized_from_feishu = ""
+                        if content_organized_raw:
+                            if isinstance(content_organized_raw, list):
+                                # 飞书多行文本字段返回列表格式
+                                for item in content_organized_raw:
+                                    if isinstance(item, dict) and 'text' in item:
+                                        content_organized_from_feishu += item.get('text', '')
+                            elif isinstance(content_organized_raw, str):
+                                content_organized_from_feishu = content_organized_raw
+                        
+                        if content_organized_from_feishu:
+                            result_text += f"\n【第{i}篇】\n"
+                            result_text += content_organized_from_feishu
+                            result_text += "\n" + "=" * 50 + "\n"
+                            logging.info(f"✓ 读取成功: 第{i}篇内容整理")
+                        else:
+                            # 如果没有内容整理字段，使用原始数据构建
+                            content_info = final_contents[i-1] if i <= len(final_contents) else {}
+                            logging.warning(f"⚠ 第{i}篇内容整理字段为空，使用原始数据")
+                            result_text += f"\n【第{i}篇】\n"
+                            result_text += f"""【标题】{content_info.get('title', '')}
 
 【正文】
-{body}
+{content_info.get('body', '')}
 
-【封面文案】{cover_text}
+【封面文案】{content_info.get('cover_text', '')}
 
 【图片建议】
-{image_suggestion}
+{content_info.get('image_suggestion', '')}
 
-【标签】{tags}
+【标签】{content_info.get('tags', '')}
 
-【@官方号】{official_accounts_display}
+【@官方号】{content_info.get('official_accounts', '')}
 """
-            result_text += "\n" + "=" * 50 + "\n"
+                            result_text += "\n" + "=" * 50 + "\n"
+                else:
+                    logging.error(f"✗ 批量获取飞书记录失败: {records_response.get('msg', 'unknown')}")
+                    # 失败时使用原始数据
+                    for i, content_info in enumerate(final_contents, 1):
+                        result_text += f"\n【第{i}篇】\n"
+                        result_text += f"""【标题】{content_info.get('title', '')}
+
+【正文】
+{content_info.get('body', '')}
+
+【封面文案】{content_info.get('cover_text', '')}
+
+【图片建议】
+{content_info.get('image_suggestion', '')}
+
+【标签】{content_info.get('tags', '')}
+
+【@官方号】{content_info.get('official_accounts', '')}
+"""
+                        result_text += "\n" + "=" * 50 + "\n"
+            except Exception as e:
+                logging.error(f"✗ 读取飞书记录异常: {e}")
+                # 异常时使用原始数据
+                for i, content_info in enumerate(final_contents, 1):
+                    result_text += f"\n【第{i}篇】\n"
+                    result_text += f"""【标题】{content_info.get('title', '')}
+
+【正文】
+{content_info.get('body', '')}
+
+【封面文案】{content_info.get('cover_text', '')}
+
+【图片建议】
+{content_info.get('image_suggestion', '')}
+
+【标签】{content_info.get('tags', '')}
+
+【@官方号】{content_info.get('official_accounts', '')}
+"""
+                    result_text += "\n" + "=" * 50 + "\n"
     
     return WorkflowOutput(
         workflow_type="一键生成",

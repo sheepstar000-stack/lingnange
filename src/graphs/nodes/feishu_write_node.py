@@ -88,6 +88,23 @@ class FeishuBitableWriter:
             }]
         }
         return self._request("POST", f"/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_update", json=body)
+    
+    def list_records(self, app_token: str, table_id: str, record_ids: list) -> dict:
+        """
+        批量获取记录
+        
+        Args:
+            app_token: 多维表格的app_token
+            table_id: 数据表的table_id
+            record_ids: 记录ID列表
+        
+        Returns:
+            记录列表信息
+        """
+        body = {
+            "record_ids": record_ids
+        }
+        return self._request("POST", f"/bitable/v1/apps/{app_token}/tables/{table_id}/records/batch_get", json=body)
 
 
 def feishu_write_node(
