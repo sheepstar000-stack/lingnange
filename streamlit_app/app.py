@@ -86,10 +86,10 @@ if st.button('🚀 开始生成', type='primary', use_container_width=True):
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    status_text.text('🔄 正在生成内容，请稍候...')
+    status_text.text('🔄 正在生成内容，这可能需要3-5分钟，请耐心等待...')
     
     try:
-        response = requests.post(API_URL, json=payload, headers=headers, timeout=120)
+        response = requests.post(API_URL, json=payload, headers=headers, timeout=600)  # 10分钟超时
         
         if response.status_code == 200:
             result = response.json()
