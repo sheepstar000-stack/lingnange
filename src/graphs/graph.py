@@ -1819,6 +1819,7 @@ def one_click_generate_workflow_node(
                 full_body = content_body + "\n\n📷 图片建议：\n" + suggestion_text
             
             content_info["body_with_image"] = full_body
+            content_info["image_suggestion"] = suggestion_text  # 单独存储图片建议，用于输出显示
             
         except Exception as e:
             logging.error(f"图片建议生成失败: {content_title} - {e}")
