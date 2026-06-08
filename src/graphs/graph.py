@@ -1686,17 +1686,17 @@ def one_click_generate_workflow_node(
         sp_template = Template(topic_post_cfg.get("sp", ""))
         sp_content = sp_template.render({})
         
-        response = llm_client.invoke(
-            messages=[
-                SystemMessage(content=sp_content),
-                HumanMessage(content=user_prompt)
-            ],
-            model=topic_post_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
-            temperature=topic_post_cfg.get("config", {}).get("temperature", 0.7),
-            max_completion_tokens=topic_post_cfg.get("config", {}).get("max_completion_tokens", 4096)
-        )
-        
         try:
+            response = llm_client.invoke(
+                messages=[
+                    SystemMessage(content=sp_content),
+                    HumanMessage(content=user_prompt)
+                ],
+                model=topic_post_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
+                temperature=topic_post_cfg.get("config", {}).get("temperature", 0.7),
+                max_completion_tokens=topic_post_cfg.get("config", {}).get("max_completion_tokens", 4096)
+            )
+            
             content = response.content if hasattr(response, 'content') else str(response)
             # 解析LLM响应 - 多策略解析
             post_data: dict = {}
