@@ -2006,6 +2006,7 @@ def one_click_generate_workflow_node(
                 "cover_image": topic_info.get("cover_image", ""),  # 封面图方向
                 "tags": post_tags_str,
                 "official_accounts": official_accounts,
+                "publish_account": publish_account,  # 存储该热点对应的发布账号
                 "topic_record_id": topic_record_id
             })
             logging.info(f"文案生成成功（暂存）: {post_title}")
@@ -2090,6 +2091,7 @@ def one_click_generate_workflow_node(
                 image_suggestion_str = str(image_suggestion_raw) if image_suggestion_raw else ''
             
             # 构建内容整理格式的文本（使用安全格式，避免Markdown标题解析）
+            content_publish_account = content_info.get("publish_account", publish_account)
             content_organized = f"""标题: {content_info['title']}
 
 正文:
@@ -2102,15 +2104,17 @@ def one_click_generate_workflow_node(
 
 标签: {content_info.get('tags', '')}
 
-官方账号: {content_info.get('official_accounts', publish_account)}"""
+官方账号: {content_info.get('official_accounts', content_publish_account)}"""
 
             # 写入内容成品库（正文字段使用完整内容，包含图片建议）
             body_with_image = content_info.get("body_with_image", content_info.get("body", ""))
+            # 使用该文案对应的发布账号，而不是外层变量
+            content_publish_account = content_info.get("publish_account", publish_account)
             new_content_fields = {
                 "发布标题": content_info["title"],
                 "正文": body_with_image,
                 "发布标签": content_info.get("tags", ""),
-                "发布账号": publish_account,
+                "发布账号": content_publish_account,
                 "@薯账号": content_info.get("official_accounts", ""),
                 "风险审核结果": "待审核",
                 "关联选题": [content_info.get("topic_record_id")],
