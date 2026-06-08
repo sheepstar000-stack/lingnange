@@ -1698,6 +1698,7 @@ def one_click_generate_workflow_node(
             )
             
             content = response.content if hasattr(response, 'content') else str(response)
+            logging.info(f"LLM返回内容长度: {len(content)} 字符")
             # 解析LLM响应 - 多策略解析
             post_data: dict = {}
             
@@ -1706,13 +1707,47 @@ def one_click_generate_workflow_node(
             if json_match:
                 json_str = json_match.group()
                 try:
-                    post_data = json.loads(json_str)
+                    parsed_json = json.loads(json_str)
+                    logging.info(f"JSON解析成功，提取到字段: {list(parsed_json.keys())}")
+                    # 从JSON中提取关键字段，处理列表格式
+                    if parsed_json.get("标题"):
+                        titles = parsed_json["标题"]
+                        if isinstance(titles, list) and len(titles) > 0:
+                            post_data["标题"] = titles[0]
+                        else:
+                            post_data["标题"] = str(titles)
+                    if parsed_json.get("正文"):
+                        body = parsed_json["正文"]
+                        if isinstance(body, list) and len(body) > 0:
+                            post_data["正文"] = body[0]
+                        else:
+                            post_data["正文"] = str(body)
+                        logging.info(f"从JSON提取正文成功，长度: {len(post_data['正文'])} 字符")
+                    if parsed_json.get("封面文案"):
+                        covers = parsed_json["封面文案"]
+                        if isinstance(covers, list) and len(covers) > 0:
+                            post_data["封面文案"] = covers[0]
+                        else:
+                            post_data["封面文案"] = str(covers)
+                    if parsed_json.get("标签"):
+                        tags = parsed_json["标签"]
+                        if isinstance(tags, list):
+                            post_data["标签"] = " ".join(tags)
+                        else:
+                            post_data["标签"] = str(tags)
+                    if parsed_json.get("适合@的官方账号"):
+                        accounts = parsed_json["适合@的官方账号"]
+                        if isinstance(accounts, list):
+                            post_data["@官方号"] = " ".join([str(a) for a in accounts])
+                        else:
+                            post_data["@官方号"] = str(accounts)
                 except json.JSONDecodeError as e:
                     logging.warning(f"JSON解析失败: {e}")
             
-            # 策略2: 如果JSON解析失败，尝试从序号格式中提取
-            if not post_data or not post_data.get("标题"):
-                # 从"一、5个标题"部分提取标题
+            # 策略2: 如果JSON解析失败或缺少关键字段，尝试从序号格式中提取
+            if not post_data or not post_data.get("标题") or not post_data.get("正文"):
+                logging.info("尝试策略2: 序号格式解析")
+                # 从"一、标题"部分提取标题
                 title_section = re.search(r'一、[^\n]*标题[^\n]*\n(.+?)二、', content, re.DOTALL)
                 if title_section:
                     titles_text = title_section.group(1).strip()
@@ -1730,6 +1765,7 @@ def one_click_generate_workflow_node(
                 body_section = re.search(r'二、[^\n]*正文[^\n]*\n(.+?)三、', content, re.DOTALL)
                 if body_section:
                     post_data["正文"] = body_section.group(1).strip()
+                    logging.info(f"从序号格式提取正文成功，长度: {len(post_data['正文'])} 字符")
                 
                 # 从"三、封面文案"部分提取封面文案
                 cover_section = re.search(r'三、[^\n]*封面文案[^\n]*\n(.+?)四、', content, re.DOTALL)
@@ -1761,6 +1797,35 @@ def one_click_generate_workflow_node(
                     accounts_found = re.findall(r'@\w+', accounts_text)
                     if accounts_found:
                         post_data["@官方号"] = " ".join(accounts_found)
+            
+            # 策略3: 如果正文仍然为空，尝试其他常见格式
+            if not post_data.get("正文"):
+                logging.info("尝试策略3: 其他格式解析")
+                # 尝试匹配 "正文：" 或 "正文:" 格式
+                body_direct_match = re.search(r'正文[：:]\s*\n(.+?)(?=封面文案|标签|@|$)', content, re.DOTALL)
+                if body_direct_match:
+                    post_data["正文"] = body_direct_match.group(1).strip()
+                    logging.info(f"从正文直接格式提取成功，长度: {len(post_data['正文'])} 字符")
+                
+                # 尝试匹配段落格式的正文（连续多行文本）
+                if not post_data.get("正文"):
+                    # 找到第一个较长的段落（超过100字符）作为正文
+                    paragraphs = re.split(r'\n\n+', content)
+                    for para in paragraphs:
+                        if len(para.strip()) > 100 and not para.strip().startswith(('标题', '封面', '标签', '@', '图片', '#', '【', '一、', '二、', '三、')):
+                            post_data["正文"] = para.strip()
+                            logging.info(f"从段落格式提取正文成功，长度: {len(post_data['正文'])} 字符")
+                            break
+            
+            # 如果标题为空，尝试从内容开头提取
+            if not post_data.get("标题"):
+                # 尝试匹配标题格式
+                title_match = re.search(r'标题[：:]\s*["\']?([^"\n]{5,50})["\']?', content)
+                if title_match:
+                    post_data["标题"] = title_match.group(1).strip()
+                else:
+                    # 使用选题标题作为备选
+                    post_data["标题"] = topic_title
             
             post_title = post_data.get("标题", topic_title)
             # 如果标题是列表，取第一个作为发布标题
@@ -1799,18 +1864,22 @@ def one_click_generate_workflow_node(
             
             # 判断内容类型并添加薯账号
             potatoes_added = []
-            # 节日热点相关
-            if "热点" in content_category or "热点" in content_style or "节日" in topic_title or "端午" in topic_title:
+            # 节日热点相关（包含情人节、端午、春节等节日关键词）
+            holiday_keywords = ["热点", "节日", "端午", "情人节", "春节", "中秋", "七夕", "元宵", "清明", "重阳", "腊八", "元旦", "五一", "十一", "国庆", "母亲节", "父亲节", "圣诞", "新年"]
+            if "热点" in content_category or "热点" in content_style or any(kw in topic_title or kw in post_body for kw in holiday_keywords):
                 potatoes_added.extend(POTATO_ACCOUNTS["节日热点"])
             # 家具工艺相关
-            if "工艺" in content_category or "工艺" in content_style or "榫卯" in post_body or "打磨" in post_body:
+            if "工艺" in content_category or "工艺" in content_style or "榫卯" in post_body or "打磨" in post_body or "手工" in post_body:
                 potatoes_added.extend(POTATO_ACCOUNTS["家具工艺"])
             # 家居空间相关
-            if "空间" in topic_title or "茶空间" in topic_title or "家居" in post_body or "家具" in topic_title:
+            if "空间" in topic_title or "茶空间" in topic_title or "家居" in post_body or "家具" in topic_title or "茶桌" in post_body or "书房" in post_body:
                 potatoes_added.extend(POTATO_ACCOUNTS["家居/空间"])
             # 文化知识相关
-            if "文化" in content_category or "知识" in content_style or "考工记" in post_body or "明式" in post_body:
+            if "文化" in content_category or "知识" in content_style or "考工记" in post_body or "明式" in post_body or "古典" in post_body or "传统" in post_body:
                 potatoes_added.extend(POTATO_ACCOUNTS["文化/知识"])
+            # 穿搭饰品相关
+            if "穿搭" in content_category or "饰品" in content_category or "手串" in topic_title or "手串" in post_body or "佩戴" in post_body or "搭配" in post_body:
+                potatoes_added.extend(POTATO_ACCOUNTS.get("穿搭/饰品", ["@时尚薯", "@穿搭薯"]))
             # 默认添加薯条小助手（普通内容）
             if not potatoes_added:
                 potatoes_added.extend(POTATO_ACCOUNTS["普通内容"])
@@ -1975,6 +2044,7 @@ def one_click_generate_workflow_node(
             image_suggestion = content.get('image_suggestion', '')
             tags = content.get('tags', '')
             cover_text = content.get('cover_text', '')  # 封面文案
+            official_accounts_display = content.get('official_accounts', publish_account)  # 包含薯账号
             
             # 按内容整理的格式输出
             result_text += f"\n【第{i}篇】\n"
@@ -1990,7 +2060,7 @@ def one_click_generate_workflow_node(
 
 【标签】{tags}
 
-【@官方号】{publish_account}
+【@官方号】{official_accounts_display}
 """
             result_text += "\n" + "=" * 50 + "\n"
     
