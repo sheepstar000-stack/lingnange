@@ -1993,20 +1993,20 @@ def one_click_generate_workflow_node(
             else:
                 image_suggestion_str = str(image_suggestion_raw) if image_suggestion_raw else ''
             
-            # 构建内容整理格式的文本（使用Markdown兼容格式）
-            content_organized = f"""**标题：**{content_info['title']}
+            # 构建内容整理格式的文本（使用安全格式，避免Markdown标题解析）
+            content_organized = f"""标题: {content_info['title']}
 
-**正文：**
+正文:
 {pure_body}
 
-**封面文案：**{content_info.get('cover_text', '')}
+封面文案: {content_info.get('cover_text', '')}
 
-**图片建议：**
+图片建议:
 {image_suggestion_str}
 
-**标签：**{content_info.get('tags', '')}
+标签: {content_info.get('tags', '')}
 
-**@官方号：**{content_info.get('official_accounts', publish_account)}"""
+官方账号: {content_info.get('official_accounts', publish_account)}"""
 
             # 写入内容成品库（正文字段使用完整内容，包含图片建议）
             body_with_image = content_info.get("body_with_image", content_info.get("body", ""))
