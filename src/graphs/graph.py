@@ -2006,10 +2006,10 @@ def one_click_generate_workflow_node(
                 "cover_image": topic_info.get("cover_image", ""),  # 封面图方向
                 "tags": post_tags_str,
                 "official_accounts": official_accounts,
-                "publish_account": publish_account,  # 存储该热点对应的发布账号
+                "publish_account": topic_account,  # 使用选题对应的账号，而不是默认账号
                 "topic_record_id": topic_record_id
             })
-            logging.info(f"文案生成成功（暂存）: {post_title}")
+            logging.info(f"文案生成成功（暂存）: {post_title}, 账号: {topic_account}")
             
         except Exception as e:
             logging.error(f"文案生成失败: {topic_title} - {e}")
