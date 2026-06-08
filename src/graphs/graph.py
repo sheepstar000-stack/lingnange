@@ -1797,21 +1797,9 @@ def one_click_generate_workflow_node(
         
         try:
             img_content = response.content if hasattr(response, 'content') else str(response)
-            # 解析JSON响应
-            json_match = re.search(r'\{.*\}', img_content, re.DOTALL)
-            if json_match:
-                img_data = json.loads(json_match.group())
-            else:
-                img_data = {}
             
-            suggestion_text = ""
-            if isinstance(img_data, dict):
-                suggestions = img_data.get("图片建议", img_data.get("建议", [img_data]))
-                for i, s in enumerate(suggestions[:5], 1):
-                    suggestion_text += f"{i}. {s.get('场景', s.get('描述', str(s)))}\n"
-            elif isinstance(img_data, list):
-                for i, s in enumerate(img_data[:5], 1):
-                    suggestion_text += f"{i}. {s.get('场景', s.get('描述', str(s)))}\n"
+            # LLM 返回的是文本格式（一、二、三...），直接作为图片建议
+            suggestion_text = img_content.strip()
             
             # 合并正文和图片建议，然后写入飞书表格
             full_body = content_body
