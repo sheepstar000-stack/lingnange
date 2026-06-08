@@ -1612,7 +1612,7 @@ def one_click_generate_workflow_node(
         
         try:
             content = response.content if hasattr(response, 'content') else str(response)
-            # 解析JSON响应 - 多策略解析
+            # 解析LLM响应 - 多策略解析
             post_data: dict = {}
             
             # 策略1: 尝试提取完整的JSON对象
@@ -1623,21 +1623,58 @@ def one_click_generate_workflow_node(
                     post_data = json.loads(json_str)
                 except json.JSONDecodeError as e:
                     logging.warning(f"JSON解析失败: {e}")
-                    # 策略2: 尝试修复JSON
-                    try:
-                        # 提取关键字段
-                        title_match = re.search(r'"标题"[：:]\s*["\']([^"\']+)["\']', content)
-                        body_match = re.search(r'"正文"[：:]\s*["\'](.+?)["\']', content, re.DOTALL)
-                        tags_match = re.search(r'"标签"[：:]\s*\[([^\]]+)\]', content)
-                        
-                        if title_match:
-                            post_data["标题"] = title_match.group(1)
-                        if body_match:
-                            post_data["正文"] = body_match.group(1)
-                        if tags_match:
-                            post_data["标签"] = tags_match.group(1)
-                    except Exception as e2:
-                        logging.error(f"JSON修复失败: {e2}")
+            
+            # 策略2: 如果JSON解析失败，尝试从序号格式中提取
+            if not post_data or not post_data.get("标题"):
+                # 从"一、5个标题"部分提取标题
+                title_section = re.search(r'一、[^\n]*标题[^\n]*\n(.+?)二、', content, re.DOTALL)
+                if title_section:
+                    titles_text = title_section.group(1).strip()
+                    # 提取第一个标题（通常是最推荐的）
+                    first_title_match = re.search(r'1\.[^\n]*[:：]?\s*([^\n]+)', titles_text)
+                    if first_title_match:
+                        post_data["标题"] = first_title_match.group(1).strip()
+                    else:
+                        # 尝试提取第一行非空内容作为标题
+                        title_lines = [l.strip() for l in titles_text.split('\n') if l.strip() and not l.strip().startswith(('种草型', '文化型', '场景型', '礼物型', '评论'))]
+                        if title_lines:
+                            post_data["标题"] = title_lines[0]
+                
+                # 从"二、正文"部分提取正文
+                body_section = re.search(r'二、[^\n]*正文[^\n]*\n(.+?)三、', content, re.DOTALL)
+                if body_section:
+                    post_data["正文"] = body_section.group(1).strip()
+                
+                # 从"三、封面文案"部分提取封面文案
+                cover_section = re.search(r'三、[^\n]*封面文案[^\n]*\n(.+?)四、', content, re.DOTALL)
+                if cover_section:
+                    covers_text = cover_section.group(1).strip()
+                    # 提取第一个封面文案
+                    first_cover_match = re.search(r'1\.[^\n]*[:：]?\s*([^\n]+)', covers_text)
+                    if first_cover_match:
+                        post_data["封面文案"] = first_cover_match.group(1).strip()
+                    else:
+                        cover_lines = [l.strip() for l in covers_text.split('\n') if l.strip()]
+                        if cover_lines:
+                            post_data["封面文案"] = cover_lines[0]
+                
+                # 从"五、15个小红书标签"部分提取标签
+                tags_section = re.search(r'五、[^\n]*标签[^\n]*\n(.+?)六、', content, re.DOTALL)
+                if tags_section:
+                    tags_text = tags_section.group(1).strip()
+                    # 提取所有#标签
+                    tags_found = re.findall(r'#\w+', tags_text)
+                    if tags_found:
+                        post_data["标签"] = " ".join(tags_found)
+                
+                # 从"六、适合@的官方账号"部分提取@账号
+                account_section = re.search(r'六、[^\n]*官方账号[^\n]*\n(.+?)七、', content, re.DOTALL)
+                if account_section:
+                    accounts_text = account_section.group(1).strip()
+                    # 提取@账号
+                    accounts_found = re.findall(r'@\w+', accounts_text)
+                    if accounts_found:
+                        post_data["@官方号"] = " ".join(accounts_found)
             
             post_title = post_data.get("标题", topic_title)
             # 如果标题是列表，取第一个作为发布标题
@@ -1656,13 +1693,15 @@ def one_click_generate_workflow_node(
                 post_tags_str = " ".join(post_tags)
             else:
                 post_tags_str = str(post_tags) if post_tags else ""
+            official_accounts = post_data.get("@官方号", "")
             
             # 暂存文案数据，等图片建议生成后合并写入
             generated_contents.append({
                 "title": post_title,
                 "body": post_body,
-                "cover": cover_text,
+                "cover_text": cover_text,
                 "tags": post_tags_str,
+                "official_accounts": official_accounts,
                 "topic_record_id": topic_record_id
             })
             logging.info(f"文案生成成功（暂存）: {post_title}")
@@ -1745,12 +1784,13 @@ def one_click_generate_workflow_node(
         try:
             full_body = content_info.get("body_with_image", content_info.get("body", ""))
             
-            # 写入内容成品库
+            # 写入内容成品库（使用实际存在的字段）
             new_content_fields = {
                 "发布标题": content_info["title"],
                 "正文": full_body,
                 "发布标签": content_info.get("tags", ""),
                 "发布账号": publish_account,
+                "@薯账号": content_info.get("official_accounts", ""),
                 "风险审核结果": "待审核",
                 "关联选题": [content_info.get("topic_record_id")]
             }
@@ -1771,23 +1811,40 @@ def one_click_generate_workflow_node(
     
     logging.info(f"📝 步骤4完成: 共写入 {len(final_contents)} 条内容")
     
-    # ========== 输出最终结果 ==========
+    # ========== 输出最终结果（按内容整理格式）==========
     result_text = f"🎉 一键生成完成！\n\n"
     result_text += f"📊 统计：\n"
     result_text += f"  • 生成选题：{len(generated_topics)} 条\n"
     result_text += f"  • 生成文案：{len(final_contents)} 篇（已写入飞书）\n\n"
     
     if final_contents:
-        result_text += f"📝 最终成品预览：\n"
+        result_text += f"📝 最终成品（内容整理格式）：\n"
         result_text += "=" * 50 + "\n"
         
         for i, content in enumerate(final_contents, 1):
+            title = content.get('title', '')
+            body = content.get('body', '')
+            image_suggestion = content.get('image_suggestion', '')
+            tags = content.get('tags', '')
+            cover_text = content.get('cover_text', '')  # 封面文案
+            
+            # 按内容整理的格式输出
             result_text += f"\n【第{i}篇】\n"
-            result_text += f"标题：{content['title']}\n"
-            full_body = content.get('body_with_image', content.get('body', ''))
-            result_text += f"正文：{full_body[:500]}...\n"
-            result_text += f"标签：{content.get('tags', '无')}\n"
-            result_text += "-" * 30 + "\n"
+            result_text += f"""【标题】{title}
+
+【正文】
+{body}
+
+【封面文案】{cover_text}
+
+【图片建议】
+{image_suggestion}
+
+【标签】{tags}
+
+【@官方号】{publish_account}
+"""
+            result_text += "\n" + "=" * 50 + "\n"
     
     return WorkflowOutput(
         workflow_type="一键生成",
