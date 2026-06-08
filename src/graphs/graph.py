@@ -1983,13 +1983,14 @@ def one_click_generate_workflow_node(
     
     for content_info in generated_contents:
         try:
-            full_body = content_info.get("body_with_image", content_info.get("body", ""))
+            # 使用纯正文（不含图片建议），避免重复
+            pure_body = content_info.get("body", "")
             
             # 构建内容整理格式的文本
             content_organized = f"""【标题】{content_info['title']}
 
 【正文】
-{full_body}
+{pure_body}
 
 【封面文案】{content_info.get('cover_text', '')}
 
@@ -2000,10 +2001,11 @@ def one_click_generate_workflow_node(
 
 【@官方号】{content_info.get('official_accounts', publish_account)}"""
 
-            # 写入内容成品库（使用实际存在的字段）
+            # 写入内容成品库（正文字段使用完整内容，包含图片建议）
+            body_with_image = content_info.get("body_with_image", content_info.get("body", ""))
             new_content_fields = {
                 "发布标题": content_info["title"],
-                "正文": full_body,
+                "正文": body_with_image,
                 "发布标签": content_info.get("tags", ""),
                 "发布账号": publish_account,
                 "@薯账号": content_info.get("official_accounts", ""),
