@@ -1402,13 +1402,13 @@ def one_click_generate_workflow_node(
     # ========== 步骤1: 生成选题 ==========
     print("📝 步骤1: 正在生成选题...")
     
-    # 读取热点日历（筛选状态为"待准备"的热点）
+    # 读取热点日历（筛选优先级为"必做"的热点，不限状态）
     hot_calendar_input = FeishuReadInput(
         app_token=APP_TOKEN,
         table_id=HOT_CALENDAR_TABLE,
-        filter_field="状态",
-        filter_value="待准备",
-        page_size=5
+        filter_field="优先级",
+        filter_value="必做",
+        page_size=10
     )
     hot_calendar_output = feishu_read_node(hot_calendar_input, config, runtime)
     logging.info(f"读取热点日历: {hot_calendar_output.record_count} 条记录")
@@ -1429,6 +1429,7 @@ def one_click_generate_workflow_node(
     for record in product_output.records:
         fields = record.get("fields", {})
         products.append({
+            "record_id": record.get("record_id", ""),
             "名称": extract_feishu_field(fields, "产品名称"),
             "分类": extract_feishu_field(fields, "产品分类"),
             "材质": extract_feishu_field(fields, "材质说明"),
@@ -1438,15 +1439,8 @@ def one_click_generate_workflow_node(
             "场景": extract_feishu_field(fields, "使用场景")
         })
     
-    account_context = get_account_context(publish_account)
-    products = filter_products_by_account(products, publish_account)
-    
-    # 构建产品摘要字符串
-    product_summary = ""
-    for p in products:
-        product_summary += f"- {p.get('名称', '')}（{p.get('分类', '')}类）：材质{p.get('材质', '')}，卖点{p.get('卖点', '')}，{p.get('价格', '')}价位，适合{p.get('人群', '')}人群，{p.get('场景', '')}场景\n"
-    if not product_summary:
-        product_summary = "无可用产品"
+    # 保存所有产品（不按账号过滤）
+    all_products = products.copy()
     
     # 加载热点选题配置
     cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_hot_topic_cfg.json")
@@ -1458,47 +1452,84 @@ def one_click_generate_workflow_node(
     generated_topics = []
     topic_record_ids = []
     
-    for hot_record in hot_calendar_output.records[:3]:  # 只处理3个热点
+    for hot_record in hot_calendar_output.records[:5]:  # 处理最多5个热点
         logging.info(f"处理热点: {hot_record.get('record_id', 'unknown')}")
         hot_fields = hot_record.get("fields", {})
         hot_topic_name = extract_feishu_field(hot_fields, "热点名称")
         hot_topic_date = extract_feishu_field(hot_fields, "热点日期")
         hot_topic_type = extract_feishu_field(hot_fields, "热点类型")
         hot_angles = extract_feishu_field(hot_fields, "编辑建议角度")
-        # 读取热点日历中的关联产品字段
-        hot_linked_product = extract_feishu_field(hot_fields, "关联产品") or extract_feishu_field(hot_fields, "关联产品关键词")
-        logging.info(f"  热点名称: {hot_topic_name}, 类型: {hot_topic_type}, 关联产品: {hot_linked_product}")
+        # 读取热点日历中的账号和关联产品字段
+        hot_account = extract_feishu_field(hot_fields, "账号") or extract_feishu_field(hot_fields, "目标账号") or ""
+        hot_linked_product_raw = extract_feishu_field(hot_fields, "关联产品") or extract_feishu_field(hot_fields, "关联产品关键词")
+        logging.info(f"  热点名称: {hot_topic_name}, 类型: {hot_topic_type}, 账号: {hot_account}, 关联产品原始数据: {hot_linked_product_raw}")
+        
+        # 提取关联产品记录ID（飞书关联字段返回格式：{'link_record_ids': ['recxxx']}）
+        linked_product_ids = []
+        if isinstance(hot_linked_product_raw, dict) and "link_record_ids" in hot_linked_product_raw:
+            linked_product_ids = hot_linked_product_raw.get("link_record_ids", [])
+        elif isinstance(hot_linked_product_raw, list):
+            for item in hot_linked_product_raw:
+                if isinstance(item, dict) and "link_record_ids" in item:
+                    linked_product_ids.extend(item.get("link_record_ids", []))
+                elif isinstance(item, str):
+                    # 尝试解析字符串形式的JSON
+                    try:
+                        parsed_item = json.loads(item.replace("'", '"'))
+                        if isinstance(parsed_item, dict) and "link_record_ids" in parsed_item:
+                            linked_product_ids.extend(parsed_item.get("link_record_ids", []))
+                    except json.JSONDecodeError:
+                        linked_product_ids.append(item)
+        elif isinstance(hot_linked_product_raw, str) and hot_linked_product_raw:
+            # 尝试解析字符串形式的JSON（飞书可能返回字符串格式的字典）
+            try:
+                parsed_raw = json.loads(hot_linked_product_raw.replace("'", '"'))
+                if isinstance(parsed_raw, dict) and "link_record_ids" in parsed_raw:
+                    linked_product_ids = parsed_raw.get("link_record_ids", [])
+                else:
+                    linked_product_ids.append(hot_linked_product_raw)
+            except json.JSONDecodeError:
+                linked_product_ids.append(hot_linked_product_raw)
+        
+        logging.info(f"  解析后的关联产品记录ID: {linked_product_ids}")
+        
+        # 根据关联产品记录ID匹配产品
+        matched_products = products
+        matched_product_name = ""
+        if linked_product_ids and products:
+            # 根据记录ID匹配产品
+            matched_products = [p for p in products if p.get("record_id") in linked_product_ids]
+            if matched_products:
+                matched_product_name = matched_products[0].get("名称", "")
+                logging.info(f"  根据记录ID {linked_product_ids} 匹配到产品: {matched_product_name}")
+            else:
+                # 如果记录ID匹配失败，尝试使用所有产品
+                matched_products = products
+                logging.info(f"  记录ID {linked_product_ids} 未匹配到产品，使用所有产品")
         
         if not hot_topic_name:
             logging.info("  热点名称为空，跳过")
             continue
         
-        # 根据关联产品关键词筛选产品
-        matched_products = products
-        if hot_linked_product:
-            # 尝试匹配产品名称包含关键词的产品
-            matched_products = [p for p in products if hot_linked_product in p.get("名称", "") or p.get("名称", "") in hot_linked_product]
-            if not matched_products:
-                # 如果没有精确匹配，使用所有产品但传递关联产品关键词给LLM
-                matched_products = products
-            logging.info(f"  根据关键词 '{hot_linked_product}' 匹配到 {len(matched_products)} 个产品")
+        # 使用热点的账号获取账号上下文
+        hot_account_context = get_account_context(hot_account)
         
         # 构建匹配产品的摘要
         matched_product_summary = ""
         for p in matched_products:
             matched_product_summary += f"- {p.get('名称', '')}（{p.get('分类', '')}类）：材质{p.get('材质', '')}，卖点{p.get('卖点', '')}，{p.get('价格', '')}价位，适合{p.get('人群', '')}人群，{p.get('场景', '')}场景\n"
         if not matched_product_summary:
-            matched_product_summary = product_summary
+            matched_product_summary = "无可用产品"
         
         user_prompt = f"""请根据以下信息为指定账号生成3个选题方案：
 
-{account_context}
+{hot_account_context}
 
 热点名称：{hot_topic_name}
 热点日期：{hot_topic_date}
 热点类型：{hot_topic_type if hot_topic_type else '无'}
 编辑建议角度：{hot_angles if hot_angles else '无，请自行发挥'}
-关联产品关键词：{hot_linked_product if hot_linked_product else '无特定关联，请从可用产品中选择'}
+关联产品：{matched_product_name if matched_product_name else '无特定关联，请从可用产品中选择'}
 
 可用产品列表：
 {matched_product_summary}
@@ -1645,8 +1676,9 @@ def one_click_generate_workflow_node(
                     new_record_id = add_result.get("data", {}).get("records", [{}])[0].get("record_id")
                     topic_record_ids.append(new_record_id)
                     
-                    # 提取LLM生成的关联产品关键词
-                    topic_product_keyword = topic_item.get("关联产品关键词", "") or hot_linked_product
+                    # 提取LLM生成的关联产品关键词，如果没有则使用热点的关联产品名称
+                    llm_product_keyword = topic_item.get("关联产品关键词", "")
+                    topic_product_keyword = llm_product_keyword if llm_product_keyword else matched_product_name
                     
                     generated_topics.append({
                         "record_id": new_record_id,
@@ -1660,7 +1692,8 @@ def one_click_generate_workflow_node(
                         "hot_topic_name": hot_topic_name,
                         "hot_topic_date": hot_topic_date,
                         "hot_topic_type": hot_topic_type,
-                        "product_keyword": topic_product_keyword
+                        "product_keyword": topic_product_keyword,
+                        "account": hot_account  # 添加账号信息
                     })
                     logging.info(f"选题写入成功: {topic_title}, 关联产品关键词: {topic_product_keyword}")
                 except Exception as e:
@@ -1689,22 +1722,23 @@ def one_click_generate_workflow_node(
         hot_topic_name = topic_info.get("hot_topic_name", "")
         hot_topic_date = topic_info.get("hot_topic_date", "")
         product_keyword = topic_info.get("product_keyword", "")
-        logging.info(f"正在为选题生成文案: {topic_title}, 热点: {hot_topic_name}, 关联产品: {product_keyword}")
+        topic_account = topic_info.get("account", "")
+        logging.info(f"正在为选题生成文案: {topic_title}, 热点: {hot_topic_name}, 关联产品: {product_keyword}, 账号: {topic_account}")
         
         # 根据关联产品关键词匹配产品
         matched_product = None
-        if product_keyword and products:
+        if product_keyword and all_products:
             # 尝试精确匹配或部分匹配
-            for p in products:
+            for p in all_products:
                 prod_name = p.get("名称", "")
                 if product_keyword in prod_name or prod_name in product_keyword:
                     matched_product = p
                     break
             # 如果没有匹配到，使用第一个产品
             if not matched_product:
-                matched_product = products[0]
-        elif products:
-            matched_product = products[0]
+                matched_product = all_products[0]
+        elif all_products:
+            matched_product = all_products[0]
         
         # 构建产品信息
         product_info = ""
@@ -1719,7 +1753,7 @@ def one_click_generate_workflow_node(
             product_info = f"产品名称：{matched_product_name}\n材质：{material}\n卖点：{selling_point}\n价格：{price}\n适合人群：{audience}\n使用场景：{scenario}"
             logging.info(f"使用产品: {matched_product_name}")
         
-        account_context = get_account_context(publish_account)
+        account_context = get_account_context(topic_account)
         
         # 构建热点提示（如果有热点信息）
         hot_topic_hint = ""
@@ -1735,7 +1769,7 @@ def one_click_generate_workflow_node(
         user_prompt = f"""请为以下选题生成小红书发布文案：
 
 选题标题：{topic_title}
-发布账号：{publish_account}
+发布账号：{topic_account}
 
 账号定位参考：
 {account_context}
@@ -1949,8 +1983,8 @@ def one_click_generate_workflow_node(
             # 合并发布账号、LLM生成的@账号和自动添加的薯账号
             all_accounts = []
             # 添加发布账号
-            if publish_account:
-                all_accounts.append(f"@{publish_account}")
+            if topic_account:
+                all_accounts.append(f"@{topic_account}")
             # 添加LLM生成的薯账号（去除重复）
             if official_accounts:
                 for acc in official_accounts.split():
