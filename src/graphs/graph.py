@@ -1513,10 +1513,26 @@ def one_click_generate_workflow_node(
                 topic_title = topic_item.get("标题", "")
                 topic_sop = topic_item.get("内容栏目", "") or topic_item.get("SOP类型", "")
                 topic_reason = topic_item.get("切入角度", "") or topic_item.get("选题理由", "")
-                topic_cover_text = topic_item.get("封面文案建议", "") or topic_item.get("封面文案", "")
-                topic_cover_image = topic_item.get("封面图方向", "") or topic_item.get("封面方向", "")
+                
+                # 尝试多种字段名获取封面文案建议
+                topic_cover_text = topic_item.get("封面文案建议") or topic_item.get("封面文案") or topic_item.get("封面配文") or ""
+                
+                # 如果没有封面文案建议，尝试从封面方向字段中提取
+                cover_direction_raw = topic_item.get("封面图方向") or topic_item.get("封面方向") or ""
+                if not topic_cover_text and cover_direction_raw:
+                    # 从封面方向描述中提取配文（如「配文：xxx」或「小字文案：xxx」）
+                    cover_match = re.search(r'[「『【"\'《]([^」』】"\'》]{5,20})[」』】"\'》]', cover_direction_raw)
+                    if cover_match:
+                        topic_cover_text = cover_match.group(1)
+                    else:
+                        # 尝试匹配 "配文：xxx" 或 "文案：xxx"
+                        text_match = re.search(r'(配文|文案|小字)[：:]\s*["\'「『]?([^"\'」』\n]{5,20})', cover_direction_raw)
+                        if text_match:
+                            topic_cover_text = text_match.group(2)
+                
+                topic_cover_image = cover_direction_raw
                 topic_tags = topic_item.get("预期标签", "") or topic_item.get("标签", "")
-                topic_official = topic_item.get("预期@薯", "") or topic_item.get("@薯账号", "")
+                topic_official = topic_item.get("预期@薯", "") or topic_item.get("@薯账号", "") or topic_item.get("适合@的官方账号", "")
                 
                 # 处理标签格式：飞书多行文本字段需要字符串，而不是数组
                 if isinstance(topic_tags, list):
@@ -1820,6 +1836,21 @@ def one_click_generate_workflow_node(
         try:
             full_body = content_info.get("body_with_image", content_info.get("body", ""))
             
+            # 构建内容整理格式的文本
+            content_organized = f"""【标题】{content_info['title']}
+
+【正文】
+{full_body}
+
+【封面文案】{content_info.get('cover_text', '')}
+
+【图片建议】
+{content_info.get('image_suggestion', '')}
+
+【标签】{content_info.get('tags', '')}
+
+【@官方号】{publish_account}"""
+
             # 写入内容成品库（使用实际存在的字段）
             new_content_fields = {
                 "发布标题": content_info["title"],
@@ -1828,7 +1859,8 @@ def one_click_generate_workflow_node(
                 "发布账号": publish_account,
                 "@薯账号": content_info.get("official_accounts", ""),
                 "风险审核结果": "待审核",
-                "关联选题": [content_info.get("topic_record_id")]
+                "关联选题": [content_info.get("topic_record_id")],
+                "内容整理": content_organized  # 写入内容整理字段
             }
             
             logging.info(f"正在写入: {content_info['title']}")
