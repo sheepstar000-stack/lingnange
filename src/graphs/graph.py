@@ -231,6 +231,20 @@ def llm_generate_json(
     raise ValueError(f"JSON解析重试{max_retries}次后仍然失败。最后输出: {last_content[:500]}")
 
 
+def llm_generate_text(
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float | None = None,
+    ctx = None,
+) -> str:
+    """调用LLM并返回纯文本响应，不解析JSON。"""
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=user_prompt),
+    ]
+    return llm_invoke(messages, temperature=temperature, ctx=ctx)
+
+
 def filter_products_by_account(products: list[dict], account: str) -> list[dict]:
     """按账号定位筛选相关产品。匹配的产品排前面，不匹配的排后面作为备选。"""
     config = ACCOUNT_CONFIG.get(account)
@@ -866,40 +880,14 @@ def feishu_image_suggestion_workflow_node(
 内容标题：{post_title}
 正文摘要：{post_body[:200]}...
 
-请输出配图方案JSON，直接输出JSON不要任何其他文字。"""
+请按格式输出配图方案（纯文本格式，不要输出JSON）。"""
 
         try:
-            data = llm_generate_json(image_suggestion_cfg.get("sp", ""), user_prompt, temperature=0.7, ctx=ctx)
-        except (ValueError, Exception) as e:
+            # 使用纯文本生成，不解析JSON
+            suggestion_text = llm_generate_text(image_suggestion_cfg.get("sp", ""), user_prompt, temperature=0.7, ctx=ctx)
+        except Exception as e:
             results.append(f"✗ {post_title} LLM调用失败: {str(e)[:100]}")
             continue
-
-        # 格式化图片建议文本
-        cover_direction = data.get("封面方向", "")
-        cover_titles = data.get("封面主标题方案", [])
-        image_sequence = data.get("图片序列", [])
-        need_reshoot = data.get("是否需要补拍", "")
-        ai_prompts = data.get("AI生图提示词", [])
-
-        suggestion_text = f"""【图片发布方案】
-
-▎封面方向：{cover_direction}
-▎封面标题方案：{' | '.join(cover_titles) if cover_titles else '无'}
-
-▎图片序列：
-"""
-        for img in image_sequence:
-            seq = img.get("序号", "?")
-            content = img.get("内容", "")
-            edit = img.get("修图方向", "")
-            suggestion_text += f"  {seq}. {content}（修图：{edit}）\n"
-
-        if need_reshoot:
-            suggestion_text += f"\n▎需补拍：{need_reshoot}\n"
-        if ai_prompts:
-            suggestion_text += f"\n▎AI生图提示词：\n"
-            for i, p in enumerate(ai_prompts, 1):
-                suggestion_text += f"  {i}. {p}\n"
 
         # 更新内容成品库
         try:
@@ -1869,7 +1857,7 @@ def one_click_generate_workflow_node(
 标题：{content_title}
 正文：{content_body[:200]}...
 
-请直接输出JSON，包含图片建议列表。"""
+请按格式输出纯文本配图方案（不要输出JSON）。"""
         
         sp_template = Template(image_cfg.get("sp", ""))
         sp_content = sp_template.render({})
