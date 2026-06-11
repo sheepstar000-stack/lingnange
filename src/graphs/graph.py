@@ -1625,8 +1625,31 @@ def one_click_generate_workflow_node(
                             post_data["标题"] = str(title_value)
                     if parsed_json.get("正文"):
                         body = parsed_json["正文"]
-                        if isinstance(body, list) and len(body) > 0:
-                            post_data["正文"] = body[0]
+                        # 处理各种异常格式
+                        if isinstance(body, dict):
+                            nested_body = body.get("正文") or body.get("发布标题", "")
+                            post_data["正文"] = str(nested_body) if nested_body else str(body)
+                            logging.warning(f"正文是嵌套dict，提取内容: {len(post_data['正文'])} 字符")
+                        elif isinstance(body, list) and len(body) > 0:
+                            post_data["正文"] = str(body[0])
+                        elif isinstance(body, str):
+                            # 检测是否是JSON字符串（正文内容被错误地输出为JSON）
+                            if body.strip().startswith("{") or body.strip().startswith("["):
+                                try:
+                                    nested = json.loads(body)
+                                    if isinstance(nested, dict):
+                                        real_body = nested.get("正文") or nested.get("发布标题", "")
+                                        if real_body:
+                                            post_data["正文"] = str(real_body)
+                                            logging.warning(f"正文是JSON字符串，提取真实正文: {len(post_data['正文'])} 字符")
+                                        else:
+                                            post_data["正文"] = body
+                                    else:
+                                        post_data["正文"] = body
+                                except json.JSONDecodeError:
+                                    post_data["正文"] = body
+                            else:
+                                post_data["正文"] = body
                         else:
                             post_data["正文"] = str(body)
                         logging.info(f"从JSON提取正文成功，长度: {len(post_data['正文'])} 字符")
