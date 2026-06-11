@@ -649,6 +649,7 @@ def feishu_topic_post_workflow_node(
 
         post_title = data.get("发布标题", topic_title)[:20]
         post_body = data.get("正文", "")
+        post_cover = data.get("封面文案", "")
         post_tags = data.get("发布标签", "")
         at_accounts = data.get("@薯账号", "")
         comment_guide = data.get("评论区引导语", "")
@@ -666,6 +667,7 @@ def feishu_topic_post_workflow_node(
                 fields={
                     "发布标题": post_title,
                     "正文": post_body,
+                    "封面文案": post_cover,
                     "内容栏目": topic_column,
                     "发布账号": account,
                     "关联选题": [topic_record_id] if topic_record_id else [],
@@ -748,6 +750,7 @@ def feishu_customer_story_workflow_node(
 
     post_title = data.get("发布标题", f"{state.customer_background}的{state.purchased_product}故事")[:20]
     post_body = data.get("正文", "")
+    post_cover = data.get("封面文案", "")
     post_tags = data.get("发布标签", "")
     at_accounts = data.get("@薯账号", "")
     comment_guide = data.get("评论区引导语", "")
@@ -766,6 +769,7 @@ def feishu_customer_story_workflow_node(
             fields={
                 "发布标题": post_title,
                 "正文": post_body,
+                "封面文案": post_cover,
                 "内容栏目": "SOP5故事",
                 "发布账号": state.publish_account,
                 "发布标签": post_tags,
@@ -1612,12 +1616,13 @@ def one_click_generate_workflow_node(
                     parsed_json = json.loads(json_str)
                     logging.info(f"JSON解析成功，提取到字段: {list(parsed_json.keys())}")
                     # 从JSON中提取关键字段，处理列表格式
-                    if parsed_json.get("标题"):
-                        titles = parsed_json["标题"]
-                        if isinstance(titles, list) and len(titles) > 0:
-                            post_data["标题"] = titles[0]
+                    # 支持新旧两种字段名
+                    title_value = parsed_json.get("发布标题") or parsed_json.get("标题")
+                    if title_value:
+                        if isinstance(title_value, list) and len(title_value) > 0:
+                            post_data["标题"] = title_value[0]
                         else:
-                            post_data["标题"] = str(titles)
+                            post_data["标题"] = str(title_value)
                     if parsed_json.get("正文"):
                         body = parsed_json["正文"]
                         if isinstance(body, list) and len(body) > 0:
@@ -1631,18 +1636,20 @@ def one_click_generate_workflow_node(
                             post_data["封面文案"] = covers[0]
                         else:
                             post_data["封面文案"] = str(covers)
-                    if parsed_json.get("标签"):
-                        tags = parsed_json["标签"]
-                        if isinstance(tags, list):
-                            post_data["标签"] = " ".join(tags)
+                    tags_value = parsed_json.get("发布标签") or parsed_json.get("标签")
+                    if tags_value:
+                        if isinstance(tags_value, list):
+                            post_data["标签"] = " ".join(tags_value)
                         else:
-                            post_data["标签"] = str(tags)
-                    if parsed_json.get("适合@的官方账号"):
-                        accounts = parsed_json["适合@的官方账号"]
-                        if isinstance(accounts, list):
-                            post_data["@官方号"] = " ".join([str(a) for a in accounts])
+                            post_data["标签"] = str(tags_value)
+                    accounts_value = parsed_json.get("@薯账号") or parsed_json.get("适合@的官方账号")
+                    if accounts_value:
+                        if isinstance(accounts_value, list):
+                            post_data["@官方号"] = " ".join([str(a) for a in accounts_value])
                         else:
-                            post_data["@官方号"] = str(accounts)
+                            post_data["@官方号"] = str(accounts_value)
+                    if parsed_json.get("评论区引导语"):
+                        post_data["评论区引导语"] = str(parsed_json["评论区引导语"])
                 except json.JSONDecodeError as e:
                     logging.warning(f"JSON解析失败: {e}")
             
