@@ -429,7 +429,14 @@ def feishu_hot_topic_workflow_node(
             results.append(f"✗ {hot_topic_name} LLM调用失败: {str(e)[:100]}")
             continue
 
-        topic_list = data.get("选题列表", [])
+        # 处理返回数据格式：可能是list（直接是选题数组）或dict（包含选题列表字段）
+        if isinstance(data, list):
+            topic_list = data
+        elif isinstance(data, dict):
+            topic_list = data.get("选题列表", [])
+        else:
+            topic_list = []
+        
         if not topic_list:
             results.append(f"✗ {hot_topic_name} LLM返回了空的选题列表")
             continue
