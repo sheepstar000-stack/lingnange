@@ -1207,17 +1207,14 @@ def _generate_from_selection(
                 logging.info(f"写入字段: {list(new_content_fields.keys())}")
                 add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
                 
-                logging.info(f"写入结果: {add_result}")
-                if add_result.get('code') == 0:
-                    success_count += 1
-                    logging.info(f"✓ 写入成功: {title}")
-                    generated_contents.append(f"✅ {title} 已写入飞书")
-                else:
-                    error_msg = add_result.get('msg', str(add_result))
-                    logging.error(f"✗ 写入失败: {title} - {error_msg}")
-                    generated_contents.append(f"❌ {title} 写入失败: {error_msg}")
+                # FeishuBitableWriter 成功时返回 resp_data，失败时会抛出异常
+                success_count += 1
+                logging.info(f"✓ 写入成功: {title}, result: {add_result}")
+                generated_contents.append(f"✅ {title} 已写入飞书")
             except Exception as e:
-                logging.error(f"写入异常: {e}")
+                import traceback
+                error_detail = traceback.format_exc()
+                logging.error(f"写入异常: {error_detail}")
                 generated_contents.append(f"❌ {title} 写入异常: {str(e)[:200]}")
                 
         except Exception as e:
