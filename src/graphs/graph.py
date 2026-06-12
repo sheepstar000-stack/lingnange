@@ -1190,34 +1190,34 @@ def _generate_from_selection(
             
             generated_contents.append(content_organized)
             
-            # 写入飞书表格（使用与一键生成相同的方式）
+            # 写入飞书表格（使用与一键生成相同的字段结构）
             logging.info(f"准备写入飞书: app_token={state.feishu_app_token[:10]}..., table_id={state.feishu_content_table_id}")
             try:
                 writer = FeishuBitableWriter()
+                # 使用与一键生成完全相同的字段
                 new_content_fields = {
                     "发布标题": title,
                     "正文": body,
-                    "封面文案": cover_text,
-                    "图片建议": image_suggestion,
                     "发布标签": tags,
-                    "@薯账号": shu_account,
-                    "评论区引导语": comment_guide,
                     "发布账号": state.publish_account,
-                    "发布状态": "待审核",
+                    "@薯账号": shu_account,
+                    "风险审核结果": "待审核",
                     "内容整理": content_organized
                 }
+                logging.info(f"写入字段: {list(new_content_fields.keys())}")
                 add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
                 
+                logging.info(f"写入结果: {add_result}")
                 if add_result.get('code') == 0:
                     success_count += 1
                     logging.info(f"✓ 写入成功: {title}")
                     generated_contents.append(f"✅ {title} 已写入飞书")
                 else:
-                    error_msg = add_result.get('msg', 'unknown')
+                    error_msg = add_result.get('msg', str(add_result))
                     logging.error(f"✗ 写入失败: {title} - {error_msg}")
                     generated_contents.append(f"❌ {title} 写入失败: {error_msg}")
             except Exception as e:
-                logging.error(f"写入失败: {e}")
+                logging.error(f"写入异常: {e}")
                 generated_contents.append(f"❌ {title} 写入异常: {str(e)[:200]}")
                 
         except Exception as e:
