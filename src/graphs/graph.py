@@ -493,6 +493,7 @@ def feishu_hot_topic_workflow_node(
                     }
                 )
                 write_output = feishu_write_node(write_input, config, runtime)
+                logging.info(f"写入结果: success={write_output.success}, message={write_output.message}")
                 if write_output.success:
                     success_count += 1
                     results.append(f"✓ {topic_title}")
@@ -1183,6 +1184,7 @@ def _generate_from_selection(
             generated_contents.append(content_organized)
             
             # 写入飞书表格
+            logging.info(f"准备写入飞书: app_token={state.feishu_app_token[:10]}..., table_id={state.feishu_content_table_id}")
             try:
                 write_input = FeishuWriteInput(
                     app_token=state.feishu_app_token,
