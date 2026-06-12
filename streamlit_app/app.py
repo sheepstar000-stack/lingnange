@@ -6,6 +6,7 @@ import os
 import sys
 import requests
 import streamlit as st
+import json
 
 # 设置页面配置
 st.set_page_config(
@@ -23,6 +24,10 @@ FEISHU_CONFIG = {
     'content_table_id': 'tblg7zZuWKcUvqQX',
     'hot_calendar_table_id': 'tblT1KM0397UcGeM'
 }
+
+# 飞书API凭据
+FEISHU_APP_ID = "cli_aaaaf1fe64f89ccd"
+FEISHU_APP_SECRET = "LgFjnvGVKzaLvvGsOA8fTh74XsrcPli0"
 
 # 发布账号选项
 PUBLISH_ACCOUNTS = ["灵楠阁品牌号", "古典家具号"]
@@ -187,6 +192,90 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+@st.cache_resource
+def get_feishu_token() -> str:
+    """获取飞书tenant_access_token"""
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    payload = {
+        "app_id": FEISHU_APP_ID,
+        "app_secret": FEISHU_APP_SECRET
+    }
+    headers = {"Content-Type": "application/json"}
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=10)
+        data = resp.json()
+        if data.get("code") == 0:
+            return data.get("tenant_access_token", "")
+    except Exception:
+        pass
+    return ""
+
+
+@st.cache_data(ttl=300)
+def fetch_products() -> list:
+    """从飞书获取产品列表"""
+    token = get_feishu_token()
+    if not token:
+        return []
+    
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_CONFIG['app_token']}/tables/{FEISHU_CONFIG['product_table_id']}/records"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    params = {"page_size": 100}
+    
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        data = resp.json()
+        if data.get("code") == 0:
+            items = data.get("data", {}).get("items", [])
+            products = []
+            for item in items:
+                fields = item.get("fields", {})
+                name = fields.get("产品名称", fields.get("名称", ""))
+                category = fields.get("分类", fields.get("产品分类", ""))
+                if name:
+                    products.append({"name": name, "category": category, "record_id": item.get("record_id", "")})
+            return products
+    except Exception:
+        pass
+    return []
+
+
+@st.cache_data(ttl=300)
+def fetch_hot_calendar() -> list:
+    """从飞书获取热点日历"""
+    token = get_feishu_token()
+    if not token:
+        return []
+    
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_CONFIG['app_token']}/tables/{FEISHU_CONFIG['hot_calendar_table_id']}/records"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    params = {"page_size": 100}
+    
+    try:
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
+        data = resp.json()
+        if data.get("code") == 0:
+            items = data.get("data", {}).get("items", [])
+            hots = []
+            for item in items:
+                fields = item.get("fields", {})
+                title = fields.get("热点名称", fields.get("名称", ""))
+                date = fields.get("日期", "")
+                status = fields.get("状态", "")
+                if title:
+                    hots.append({"title": title, "date": date, "status": status, "record_id": item.get("record_id", "")})
+            return hots
+    except Exception:
+        pass
+    return []
+
+
 def call_workflow(workflow_type: str, params: dict) -> dict:
     """调用后端工作流API"""
     # 从session_state或环境变量获取API地址
@@ -303,27 +392,76 @@ def main():
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">🎯 选择产品和热点生成定制内容</div>', unsafe_allow_html=True)
         
-        # 产品输入
+        # 从飞书获取产品列表
+        with st.spinner("正在加载产品和热点数据..."):
+            products_list = fetch_products()
+            hots_list = fetch_hot_calendar()
+        
+        # 产品选择
         st.markdown("### 📦 产品选择")
-        st.markdown("**输入产品名称（多个产品用逗号分隔）**")
-        st.markdown("*示例：金丝楠小凳, 茶盘, 香炉*")
+        if products_list:
+            product_options = [f"{p['name']} ({p['category']})" if p.get('category') else p['name'] for p in products_list]
+            selected_products_display = st.multiselect(
+                "选择产品（可多选）",
+                options=product_options,
+                key="products_multiselect"
+            )
+            # 解析选中的产品
+            selected_products = []
+            for prod_display in selected_products_display:
+                # 从显示名称中提取产品名称
+                name = prod_display.split(" (")[0] if " (" in prod_display else prod_display
+                # 找到对应的原始数据
+                for p in products_list:
+                    if p['name'] == name:
+                        selected_products.append({"name": p['name'], "category": p.get('category', ''), "record_id": p.get('record_id', '')})
+                        break
+            st.caption(f"已选择 {len(selected_products)} 个产品")
+        else:
+            st.warning("⚠️ 无法获取产品数据，请手动输入")
+            product_input = st.text_input(
+                "手动输入产品名称（多个用逗号分隔）",
+                placeholder="金丝楠小凳, 茶盘, 香炉",
+                key="product_input_fallback"
+            )
+            if product_input.strip():
+                selected_products = [{"name": p.strip()} for p in product_input.split(",") if p.strip()]
+            else:
+                selected_products = []
         
-        product_input = st.text_input(
-            "产品名称",
-            placeholder="金丝楠小凳, 茶盘, 香炉",
-            key="product_input"
-        )
-        
-        # 热点输入
+        # 热点选择
         st.markdown("### 🔥 热点选择")
-        st.markdown("**输入热点名称（多个热点用逗号分隔，可选）**")
-        st.markdown("*示例：端午节, 父亲节, 618*")
-        
-        hot_input = st.text_input(
-            "热点名称",
-            placeholder="端午节, 父亲节",
-            key="hot_input"
-        )
+        if hots_list:
+            # 过滤掉已使用的热点
+            available_hots = [h for h in hots_list if h.get('status') != '已使用']
+            hot_options = [f"{h['title']} ({h['date']})" if h.get('date') else h['title'] for h in available_hots]
+            selected_hots_display = st.multiselect(
+                "选择热点（可多选，可选）",
+                options=hot_options,
+                key="hots_multiselect"
+            )
+            # 解析选中的热点
+            selected_hots = []
+            for hot_display in selected_hots_display:
+                # 从显示名称中提取热点名称
+                title = hot_display.split(" (")[0] if " (" in hot_display else hot_display
+                # 找到对应的原始数据
+                for h in available_hots:
+                    if h['title'] == title:
+                        selected_hots.append({"title": h['title'], "date": h.get('date', ''), "record_id": h.get('record_id', '')})
+                        break
+            st.caption(f"已选择 {len(selected_hots)} 个热点")
+        else:
+            st.warning("⚠️ 无法获取热点数据，请手动输入")
+            hot_input = st.text_input(
+                "手动输入热点名称（多个用逗号分隔，可选）",
+                placeholder="端午节, 父亲节",
+                key="hot_input_fallback"
+            )
+            if hot_input.strip():
+                selected_hots = [{"title": h.strip()} for h in hot_input.split(",") if h.strip()]
+            else:
+                selected_hots = []
         
         # 发布账号
         st.markdown("### 📱 发布账号")
@@ -333,21 +471,17 @@ def main():
         
         # 执行按钮
         if st.button("✨ 生成定制内容", key="run_custom"):
-            if not product_input.strip():
-                st.warning("⚠️ 请输入至少一个产品名称")
+            if not selected_products:
+                st.warning("⚠️ 请选择至少一个产品")
             else:
-                # 解析产品和热点
-                products = [{"name": p.strip()} for p in product_input.split(",") if p.strip()]
-                hots = [{"title": h.strip()} for h in hot_input.split(",") if h.strip()] if hot_input.strip() else []
-                
-                with st.spinner(f"正在为 {len(products)} 个产品生成内容..."):
+                with st.spinner(f"正在为 {len(selected_products)} 个产品生成内容..."):
                     params = {
                         "feishu_app_token": FEISHU_CONFIG['app_token'],
                         "feishu_product_table_id": FEISHU_CONFIG['product_table_id'],
                         "feishu_topic_table_id": FEISHU_CONFIG['topic_table_id'],
                         "feishu_content_table_id": FEISHU_CONFIG['content_table_id'],
-                        "selected_products": products,
-                        "selected_hots": hots,
+                        "selected_products": selected_products,
+                        "selected_hots": selected_hots,
                         "publish_account": publish_account_2
                     }
                     
