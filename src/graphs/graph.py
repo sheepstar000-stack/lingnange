@@ -1192,8 +1192,11 @@ def _generate_from_selection(
             
             # 写入飞书表格（使用与一键生成相同的字段结构）
             logging.info(f"准备写入飞书: app_token={state.feishu_app_token[:10]}..., table_id={state.feishu_content_table_id}")
+            write_success = False
+            write_error = ""
             try:
                 writer = FeishuBitableWriter()
+                logging.info(f"FeishuBitableWriter 初始化成功, token={writer.access_token[:20] if writer.access_token else 'None'}...")
                 # 使用与一键生成完全相同的字段
                 new_content_fields = {
                     "发布标题": title,
@@ -1209,13 +1212,19 @@ def _generate_from_selection(
                 
                 # FeishuBitableWriter 成功时返回 resp_data，失败时会抛出异常
                 success_count += 1
-                logging.info(f"✓ 写入成功: {title}, result: {add_result}")
-                generated_contents.append(f"✅ {title} 已写入飞书")
+                write_success = True
+                logging.info(f"✓ 写入成功: {title}")
             except Exception as e:
                 import traceback
                 error_detail = traceback.format_exc()
+                write_error = str(e)
                 logging.error(f"写入异常: {error_detail}")
-                generated_contents.append(f"❌ {title} 写入异常: {str(e)[:200]}")
+            
+            # 更新内容状态
+            if write_success:
+                generated_contents.append(f"✅ {title} 已写入飞书")
+            else:
+                generated_contents.append(f"❌ {title} 写入失败: {write_error[:100]}")
                 
         except Exception as e:
             logging.error(f"生成失败: {product_name} - {e}")
