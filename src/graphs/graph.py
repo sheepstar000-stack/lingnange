@@ -1132,48 +1132,68 @@ def _generate_from_selection(
         up_content = up_content.replace("{{product_info}}", f"产品: {product_name}, 分类: {product_category}")
         up_content = up_content.replace("{{account}}", state.publish_account)
         
-        try:
-            # 调用LLM生成文案
-            logging.info(f"调用LLM生成文案: product={product_name}")
-            result = llm_generate_json(sp, up_content, temperature=0.7, ctx=ctx)
-            logging.info(f"LLM返回结果类型: {type(result)}, 内容: {str(result)[:200] if result else 'None'}")
+        # 重试机制：最多重试3次
+        max_retries = 3
+        retry_count = 0
+        last_error = ""
+        
+        while retry_count < max_retries:
+            retry_count += 1
+            logging.info(f"尝试生成 ({retry_count}/{max_retries}): product={product_name}")
             
-            if not result:
-                logging.error(f"LLM返回空结果")
-                generated_contents.append(f"❌ {product_name} LLM返回空结果")
-                continue
-                
-            # 解析结果
-            title = result.get("发布标题", "")
-            body = result.get("正文", "")
-            cover_text = result.get("封面文案", "")
-            tags = result.get("发布标签", "")
-            shu_account = result.get("@薯账号", "")
-            comment_guide = result.get("评论区引导语", "")
-            
-            # 生成图片建议
-            image_suggestion = ""
             try:
-                image_cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_image_suggestion_cfg.json")
-                with open(image_cfg_path, 'r', encoding='utf-8') as f:
-                    image_cfg = json.load(f)
+                # 调用LLM生成文案
+                result = llm_generate_json(sp, up_content, temperature=0.7, ctx=ctx)
+                logging.info(f"LLM返回结果类型: {type(result)}, 内容: {str(result)[:200] if result else 'None'}")
                 
-                image_prompt = f"""请为以下小红书内容生成图片拍摄建议：
+                if not result:
+                    last_error = "LLM返回空结果"
+                    logging.error(f"尝试 {retry_count} 失败: {last_error}")
+                    if retry_count < max_retries:
+                        continue
+                    else:
+                        generated_contents.append(f"❌ {product_name} 生成失败(重试{max_retries}次): {last_error}")
+                        break
+                    
+                # 解析结果
+                title = result.get("发布标题", "")
+                body = result.get("正文", "")
+                cover_text = result.get("封面文案", "")
+                tags = result.get("发布标签", "")
+                shu_account = result.get("@薯账号", "")
+                comment_guide = result.get("评论区引导语", "")
+                
+                if not title or not body:
+                    last_error = f"标题或正文为空: title={title[:20] if title else '空'}, body={body[:20] if body else '空'}"
+                    logging.error(f"尝试 {retry_count} 失败: {last_error}")
+                    if retry_count < max_retries:
+                        continue
+                    else:
+                        generated_contents.append(f"❌ {product_name} 生成失败(重试{max_retries}次): {last_error}")
+                        break
+                
+                # 生成图片建议
+                image_suggestion = ""
+                try:
+                    image_cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_image_suggestion_cfg.json")
+                    with open(image_cfg_path, 'r', encoding='utf-8') as f:
+                        image_cfg = json.load(f)
+                    
+                    image_prompt = f"""请为以下小红书内容生成图片拍摄建议：
 
 标题：{title}
 正文：{body[:200]}...
 
 请按格式输出纯文本配图方案（不要输出JSON）。"""
+                    
+                    image_suggestion = llm_generate_text(image_cfg.get("sp", ""), image_prompt, temperature=0.7, ctx=ctx)
+                except Exception as e:
+                    logging.warning(f"图片建议生成失败: {e}")
                 
-                image_suggestion = llm_generate_text(image_cfg.get("sp", ""), image_prompt, temperature=0.7, ctx=ctx)
-            except Exception as e:
-                logging.warning(f"图片建议生成失败: {e}")
-            
-            # 整理内容
-            # 正文包含图片建议（与一键生成一致）
-            body_with_image = f"{body}\n\n【图片建议】\n{image_suggestion}"
-            
-            content_organized = f"""【标题】{title}
+                # 整理内容
+                body_with_image = f"{body}\n\n【图片建议】\n{image_suggestion}"
+                
+                content_organized = f"""【标题】{title}
 
 【正文】
 {body}
@@ -1190,52 +1210,59 @@ def _generate_from_selection(
 【评论区引导语】{comment_guide}
 
 【发布账号】{state.publish_account}"""
-            
-            generated_contents.append(content_organized)
-            
-            # 写入飞书表格（使用与一键生成相同的字段结构）
-            logging.info(f"准备写入飞书: app_token={state.feishu_app_token[:10]}..., table_id={state.feishu_content_table_id}")
-            write_success = False
-            write_error = ""
-            try:
-                writer = FeishuBitableWriter()
-                logging.info(f"FeishuBitableWriter 初始化成功, token={writer.access_token[:20] if writer.access_token else 'None'}...")
-                # 使用与一键生成完全相同的字段（正文包含图片建议）
-                new_content_fields = {
-                    "发布标题": title,
-                    "正文": body_with_image,  # 包含图片建议
-                    "发布标签": tags,
-                    "发布账号": state.publish_account,
-                    "@薯账号": shu_account,
-                    "风险审核结果": "待审核",
-                    "内容整理": content_organized
-                }
-                logging.info(f"写入字段: {list(new_content_fields.keys())}")
-                add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
                 
-                # 检查返回结果（与一键生成相同）
-                if add_result.get('code') == 0:
-                    success_count += 1
-                    write_success = True
-                    logging.info(f"✓ 写入成功: {title}")
+                # 写入飞书表格（带重试）
+                write_success = False
+                write_error = ""
+                for write_retry in range(max_retries):
+                    try:
+                        writer = FeishuBitableWriter()
+                        
+                        # 检查 access_token 是否有效
+                        if not writer.access_token:
+                            write_error = "飞书access_token为空，请检查飞书集成配置"
+                            logging.error(f"写入失败(尝试{write_retry+1}): {write_error}")
+                            continue
+                        
+                        new_content_fields = {
+                            "发布标题": title,
+                            "正文": body_with_image,
+                            "发布标签": tags,
+                            "发布账号": state.publish_account,
+                            "@薯账号": shu_account,
+                            "风险审核结果": "待审核",
+                            "内容整理": content_organized
+                        }
+                        
+                        logging.info(f"写入飞书(尝试{write_retry+1}): app_token={state.feishu_app_token[:10]}..., table_id={state.feishu_content_table_id}")
+                        add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
+                        
+                        # 如果执行到这里，说明写入成功（_request在失败时会抛出异常）
+                        success_count += 1
+                        write_success = True
+                        logging.info(f"✓ 写入成功: {title}")
+                        break
+                    except Exception as e:
+                        import traceback
+                        write_error = f"{str(e)}"
+                        logging.error(f"写入异常(尝试{write_retry+1}): {write_error}\n{traceback.format_exc()}")
+                
+                # 记录结果
+                if write_success:
+                    generated_contents.append(content_organized)
+                    generated_contents.append(f"✅ {title} 已写入飞书")
                 else:
-                    write_error = add_result.get('msg', 'unknown error')
-                    logging.error(f"✗ 写入失败: {title} - {write_error}")
+                    generated_contents.append(f"❌ {title} 写入失败(重试{max_retries}次): {write_error[:200]}")
+                
+                # 生成成功，跳出重试循环
+                break
+                    
             except Exception as e:
                 import traceback
-                error_detail = traceback.format_exc()
-                write_error = str(e)
-                logging.error(f"写入异常: {error_detail}")
-            
-            # 更新内容状态
-            if write_success:
-                generated_contents.append(f"✅ {title} 已写入飞书")
-            else:
-                generated_contents.append(f"❌ {title} 写入失败: {write_error[:100]}")
-                
-        except Exception as e:
-            logging.error(f"生成失败: {product_name} - {e}")
-            generated_contents.append(f"❌ {product_name} 生成失败: {str(e)[:100]}")
+                last_error = f"{str(e)}\n{traceback.format_exc()}"
+                logging.error(f"生成异常(尝试{retry_count}): {last_error}")
+                if retry_count >= max_retries:
+                    generated_contents.append(f"❌ {product_name} 生成失败(重试{max_retries}次): {str(e)[:100]}")
     
     result_text = f"✨ 自选生成完成！\n\n选中产品: {len(state.selected_products)} 个\n选中热点: {len(state.selected_hots)} 个\n生成内容: {len(generated_contents)} 篇\n成功写入: {success_count} 篇\n\n"
     result_text += "\n" + "="*50 + "\n".join(generated_contents)
