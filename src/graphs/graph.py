@@ -1240,10 +1240,16 @@ def _generate_from_selection(
                         logging.info(f"写入飞书(尝试{write_retry+1}): app_token={state.feishu_app_token[:10]}..., table_id={state.feishu_content_table_id}")
                         add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
                         
-                        # 如果执行到这里，说明写入成功（_request在失败时会抛出异常）
-                        write_success = True
-                        logging.info(f"✓ 写入成功: {title}")
-                        break
+                        logging.info(f"写入结果: {add_result}")
+                        
+                        # 检查返回码，与一键生成一致
+                        if add_result.get('code') == 0:
+                            write_success = True
+                            logging.info(f"✓ 写入成功: {title}")
+                            break
+                        else:
+                            write_error = add_result.get('msg', '未知错误')
+                            logging.error(f"写入失败(尝试{write_retry+1}): code={add_result.get('code')}, msg={write_error}")
                     except Exception as e:
                         import traceback
                         write_error = f"{str(e)}"
