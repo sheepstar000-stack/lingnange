@@ -1204,8 +1204,13 @@ def _generate_from_selection(
                 if write_output.success:
                     success_count += 1
                     logging.info(f"✓ 已写入内容: {title}")
+                    generated_contents.append(f"✅ {title} 已写入飞书")
+                else:
+                    error_msg = write_output.message if hasattr(write_output, 'message') else str(write_output)
+                    generated_contents.append(f"❌ {title} 写入失败: {error_msg}")
             except Exception as e:
                 logging.error(f"写入失败: {e}")
+                generated_contents.append(f"❌ {title} 写入异常: {str(e)[:200]}")
                 
         except Exception as e:
             logging.error(f"生成失败: {product_name} - {e}")
