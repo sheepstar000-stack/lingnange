@@ -12,7 +12,7 @@ FEISHU_API = 'https://open.feishu.cn/open-apis/bitable/v1/apps'
 
 # 预填飞书表格ID
 FEISHU_CONFIG = {
-    'app_token': 'HF7dYv7ubaLkWss7d3fVcA4ynugcqhJJfAbpmc',  # 使用正确的app_token
+    'app_token': 'HF7dYv7ubaLkWss7d3fVcA4ynugcqhJJfAbpmc',
     'product_table_id': 'tbllExTlKURFJP2j',
     'topic_table_id': 'tblJNjx74uZ3s1vs',
     'content_table_id': 'tblsCeJXz0OcL01T',
@@ -327,41 +327,17 @@ with tab2:
     st.markdown('<div class="card-title">🎨 自选产品与热点生成</div>', unsafe_allow_html=True)
     st.markdown('选择特定的产品和热点，生成定制化的内容')
     
-    # 预设的产品和热点（备用，当飞书API不可用时使用）
-    PRESET_PRODUCTS = [
-        {'name': '金丝楠小凳', 'category': '家具', 'record_id': 'preset_1'},
-        {'name': '金丝楠茶盘', 'category': '茶器', 'record_id': 'preset_2'},
-        {'name': '金丝楠香炉', 'category': '香器', 'record_id': 'preset_3'},
-        {'name': '金丝楠笔筒', 'category': '文房', 'record_id': 'preset_4'},
-        {'name': '金丝楠手串', 'category': '饰品', 'record_id': 'preset_5'},
-        {'name': '金丝楠花架', 'category': '家具', 'record_id': 'preset_6'},
-        {'name': '金丝楠博古架', 'category': '家具', 'record_id': 'preset_7'},
-        {'name': '金丝楠茶杯', 'category': '茶器', 'record_id': 'preset_8'},
-    ]
-    
-    PRESET_HOTS = [
-        {'title': '端午节', 'date': '2025-05-31', 'record_id': 'hot_1'},
-        {'title': '父亲节', 'date': '2025-06-15', 'record_id': 'hot_2'},
-        {'title': '618购物节', 'date': '2025-06-18', 'record_id': 'hot_3'},
-        {'title': '夏至', 'date': '2025-06-21', 'record_id': 'hot_4'},
-        {'title': '毕业季', 'date': '2025-06-07', 'record_id': 'hot_5'},
-        {'title': '七夕节', 'date': '2025-08-10', 'record_id': 'hot_6'},
-    ]
-    
-    # 尝试获取飞书数据
-    with st.spinner('📂 正在加载产品数据...'):
+    # 从飞书获取真实数据
+    with st.spinner('📂 正在从飞书加载产品数据...'):
         products = fetch_feishu_data(FEISHU_CONFIG['app_token'], FEISHU_CONFIG['product_table_id'])
     
-    with st.spinner('📅 正在加载热点数据...'):
+    with st.spinner('📅 正在从飞书加载热点数据...'):
         hot_topics = fetch_feishu_data(FEISHU_CONFIG['app_token'], FEISHU_CONFIG['hot_calendar_table_id'])
     
-    # 如果飞书数据为空，使用预设数据
-    if not products:
-        st.info('💡 使用预设产品列表（飞书数据暂不可用）')
-        products_data = PRESET_PRODUCTS
-    else:
-        products_data = []
-        for item in products[:20]:
+    # 解析产品数据
+    products_data = []
+    if products:
+        for item in products[:50]:
             fields = item.get('fields', {})
             name = extract_field(fields, '产品名称') or extract_field(fields, '名称')
             category = extract_field(fields, '分类') or extract_field(fields, '产品分类')
@@ -371,13 +347,13 @@ with tab2:
                     'category': category,
                     'record_id': item.get('record_id', '')
                 })
-    
-    if not hot_topics:
-        st.info('💡 使用预设热点列表（飞书数据暂不可用）')
-        hots_data = PRESET_HOTS
     else:
-        hots_data = []
-        for item in hot_topics[:20]:
+        st.error('❌ 无法获取产品数据，请检查飞书配置是否正确')
+    
+    # 解析热点数据
+    hots_data = []
+    if hot_topics:
+        for item in hot_topics[:50]:
             fields = item.get('fields', {})
             title = extract_field(fields, '热点名称') or extract_field(fields, '事件') or extract_field(fields, '名称')
             date = extract_field(fields, '日期') or extract_field(fields, '时间') or extract_field(fields, '热点日期')
@@ -387,6 +363,8 @@ with tab2:
                     'date': date,
                     'record_id': item.get('record_id', '')
                 })
+    else:
+        st.warning('⚠️ 无法获取热点数据，请检查飞书配置是否正确')
     
     if products_data or hots_data:
         col1, col2 = st.columns(2)
