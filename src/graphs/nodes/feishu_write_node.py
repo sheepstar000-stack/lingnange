@@ -3,30 +3,63 @@
 将生成的内容写入飞书表格
 """
 
+import os
 import requests
 from functools import wraps
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.runtime import Runtime
 from coze_coding_utils.runtime_ctx.context import Context
 from cozeloop.decorator import observe
-from coze_workload_identity import Client
 
 from graphs.state import FeishuWriteInput, FeishuWriteOutput
 
+# 飞书应用凭据（从环境变量获取，或使用默认值）
+FEISHU_APP_ID = os.getenv("FEISHU_APP_ID", "cli_aaaaf1fe64f89ccd")
+FEISHU_APP_SECRET = os.getenv("FEISHU_APP_SECRET", "LgFjnvGVKzaLvvGsOA8fTh74XsrcPli0")
+
+
+def get_feishu_access_token_via_app() -> Optional[str]:
+    """使用 APP_ID 和 APP_SECRET 获取飞书 access_token"""
+    try:
+        url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        data = {
+            "app_id": FEISHU_APP_ID,
+            "app_secret": FEISHU_APP_SECRET
+        }
+        resp = requests.post(url, json=data, timeout=10)
+        result = resp.json()
+        if result.get("code") == 0:
+            return result.get("tenant_access_token")
+        else:
+            print(f"获取飞书token失败: {result}")
+            return None
+    except Exception as e:
+        print(f"获取飞书token异常: {e}")
+        return None
+
 
 def get_feishu_access_token() -> str:
-    """获取飞书多维表格的访问令牌"""
-    client = Client()
-    access_token = client.get_integration_credential("integration-feishu-base")
-    return access_token
+    """获取飞书多维表格的访问令牌（优先使用Coze集成，备用APP凭据）"""
+    # 首先尝试 Coze 平台的飞书集成
+    try:
+        from coze_workload_identity import Client
+        client = Client()
+        access_token = client.get_integration_credential("integration-feishu-base")
+        if access_token:
+            return access_token
+    except Exception as e:
+        print(f"Coze飞书集成获取失败: {e}，尝试使用APP凭据")
+    
+    # 备用方案：使用 APP_ID 和 APP_SECRET 获取 token
+    return get_feishu_access_token_via_app() or ""
 
 
 class FeishuBitableWriter:
     """飞书多维表格写入客户端"""
     
-    def __init__(self, base_url: str = "https://open.larkoffice.com/open-apis", timeout: int = 30):
+    def __init__(self, base_url: str = "https://open.feishu.cn/open-apis", timeout: int = 30):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.access_token = get_feishu_access_token()
