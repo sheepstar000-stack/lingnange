@@ -1234,6 +1234,7 @@ def _generate_from_selection(
                             "发布账号": state.publish_account,
                             "@薯账号": shu_account,
                             "风险审核结果": "待审核",
+                            "关联选题": [],  # 自选生成没有关联选题记录
                             "内容整理": content_organized
                         }
                         
