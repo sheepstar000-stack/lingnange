@@ -239,7 +239,12 @@ def fetch_products() -> tuple:
                     products.append({"name": name, "category": category, "record_id": item.get("record_id", "")})
             return products, ""
         else:
-            return [], f"获取产品失败: {data.get('msg', '未知错误')} (code: {data.get('code')})"
+            error_detail = data.get('msg', '未知错误')
+            error_code = data.get('code')
+            # 添加权限申请链接
+            if error_code == 99991672 or 'scope' in error_detail.lower():
+                error_detail += f"\n\n💡 解决方案：请确保多维表格已添加应用为协作者！\n1. 打开多维表格 → 右上角「...」→「添加协作者」\n2. 搜索应用ID: cli_aaaaf1fe64f89ccd\n3. 授予「可查看」权限"
+            return [], f"获取产品失败: {error_detail} (code: {error_code})"
     except Exception as e:
         return [], f"网络请求异常: {str(e)}"
 
@@ -273,7 +278,11 @@ def fetch_hot_calendar() -> tuple:
                     hots.append({"title": title, "date": date, "status": status, "record_id": item.get("record_id", "")})
             return hots, ""
         else:
-            return [], f"获取热点失败: {data.get('msg', '未知错误')} (code: {data.get('code')})"
+            error_detail = data.get('msg', '未知错误')
+            error_code = data.get('code')
+            if error_code == 99991672 or 'scope' in error_detail.lower():
+                error_detail += f"\n\n💡 解决方案：请确保多维表格已添加应用为协作者！\n1. 打开多维表格 → 右上角「...」→「添加协作者」\n2. 搜索应用ID: cli_aaaaf1fe64f89ccd\n3. 授予「可查看」权限"
+            return [], f"获取热点失败: {error_detail} (code: {error_code})"
     except Exception as e:
         return [], f"网络请求异常: {str(e)}"
 
