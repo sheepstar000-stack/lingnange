@@ -203,8 +203,8 @@ st.markdown("""
 def get_feishu_token() -> str:
     """获取飞书访问令牌"""
     # 使用环境变量或默认配置
-    app_id = os.getenv("FEISHU_APP_ID", "cli_a7f0e1c3b6f9d001")
-    app_secret = os.getenv("FEISHU_APP_SECRET", "dKj8mNpQrStUvWxYz123456789abcdef")
+    app_id = os.getenv("FEISHU_APP_ID", "cli_aaaaf1fe64f89ccd")
+    app_secret = os.getenv("FEISHU_APP_SECRET", "LgFjnvGVKzaLvvGsOA8fTh74XsrcPli0")
     
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     headers = {"Content-Type": "application/json"}
