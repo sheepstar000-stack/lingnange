@@ -195,8 +195,9 @@ def call_workflow(workflow_type: str, params: dict) -> dict:
     else:
         api_url = os.getenv("API_URL", os.getenv("BACKEND_URL", "https://jv7dr2vk3d.coze.site/run"))
     
-    # 获取API Token
-    api_token = st.session_state.get("api_token", "")
+    # 获取API Token（优先使用session_state，否则使用默认Token）
+    default_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6IjIyYmM0N2ZmLTJmZjYtNDM2OC1hYzIyLTllMTA3ZTI1MWU2ZSJ9.eyJpc3MiOiJodHRwczovL2FwaS5jb3plLmNuIiwiYXVkIjpbIlpoZFlSU0NXMVlLZEhvNmNaVWlDaXpjMVY0M2dGUkRvIl0sImV4cCI6ODIxMDI2Njg3Njc5OSwiaWF0IjoxNzgxMjM4ODgxLCJzdWIiOiJzcGlmZmU6Ly9hcGkuY296ZS5jbi93b3JrbG9hZF9pZGVudGl0eS9pZDo3NjQ3MDEzMzg4NjAxNTI0MjI0Iiwic3JjIjoiaW5ib3VuZF9hdXRoX2FjY2Vzc190b2tlbl9pZDo3NjUwMzYyNzQxMTYwNDExMTc2In0.i3B615WHx6zbjA2KV705q4zhJJlK-AeXuYITTKQ94e-GXWTSVp80nUI85rMasfeILhrUaPp0HYDV407h_h52MEKp-JswfMkZuingLtUScurvwcRqU232qUAt55jUGjq25zBSWZPsrVkxg9pgkhmnrqaidm3xGt1yDtzhPGj7waL76UWHQ0N4T7lw2CyvN8STWqFSdbCXlO934YPgXJQNbCL6CRO1dY-ybHNSN8Uaz-NB5Yg7NX-5aUCnJdYPdfmYeXKuKNSi5AVyQF-OBhjhshhb0Mglm8tRFlv3KXRK_AItRgjC2WkUk_qnwyfTtSx7w-LLt9sKUn7NsIpLprmrrw"
+    api_token = st.session_state.get("api_token", default_token)
     
     payload = {
         "workflow_type": workflow_type,
