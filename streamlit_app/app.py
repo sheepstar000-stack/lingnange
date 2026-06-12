@@ -9,12 +9,11 @@ TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImMwNTQ1ZjM1LWY0M2YtNDU1OS1iNmUzLTc3ODc1MTF
 
 # 飞书配置
 FEISHU_CONFIG = {
-    'app_token': 'HF7dYv7ubaLkWss7d3fVcA4ynugcqhJJfAbpmc',
+    'app_token': 'FoWqb7NLuah1gdssEHbc7Wk9nQh',
     'product_table_id': 'tbllExTlKURFJP2j',
+    'hot_calendar_table_id': 'tblT1KM0397UcGeM',
     'topic_table_id': 'tblJNjx74uZ3s1vs',
-    'content_table_id': 'tblsCeJXz0OcL01T',
-    'review_table_id': 'tblZ3EZ74uZ3s1vs',
-    'hot_calendar_table_id': 'tblT1KM0397UcGeM'
+    'content_table_id': 'tblg7zZuWKcUvqQX'
 }
 
 # 页面配置（必须放在最前面）
