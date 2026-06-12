@@ -1241,7 +1241,6 @@ def _generate_from_selection(
                         add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
                         
                         # 如果执行到这里，说明写入成功（_request在失败时会抛出异常）
-                        success_count += 1
                         write_success = True
                         logging.info(f"✓ 写入成功: {title}")
                         break
@@ -1257,7 +1256,8 @@ def _generate_from_selection(
                     success_count += 1
                     status_messages.append(f"✅ {title} 已写入飞书")
                 else:
-                    error_messages.append(f"❌ {title} 写入失败(重试{max_retries}次): {write_error[:200]}")
+                    error_msg = write_error if write_error else "未知错误"
+                    error_messages.append(f"❌ {title} 写入失败(重试{max_retries}次): {error_msg[:200]}")
                 
                 # 生成成功，跳出重试循环
                 break
