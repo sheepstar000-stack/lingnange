@@ -1170,6 +1170,9 @@ def _generate_from_selection(
                 logging.warning(f"图片建议生成失败: {e}")
             
             # 整理内容
+            # 正文包含图片建议（与一键生成一致）
+            body_with_image = f"{body}\n\n【图片建议】\n{image_suggestion}"
+            
             content_organized = f"""【标题】{title}
 
 【正文】
@@ -1197,10 +1200,10 @@ def _generate_from_selection(
             try:
                 writer = FeishuBitableWriter()
                 logging.info(f"FeishuBitableWriter 初始化成功, token={writer.access_token[:20] if writer.access_token else 'None'}...")
-                # 使用与一键生成完全相同的字段
+                # 使用与一键生成完全相同的字段（正文包含图片建议）
                 new_content_fields = {
                     "发布标题": title,
-                    "正文": body,
+                    "正文": body_with_image,  # 包含图片建议
                     "发布标签": tags,
                     "发布账号": state.publish_account,
                     "@薯账号": shu_account,
@@ -1210,10 +1213,14 @@ def _generate_from_selection(
                 logging.info(f"写入字段: {list(new_content_fields.keys())}")
                 add_result = writer.add_record(state.feishu_app_token, state.feishu_content_table_id, new_content_fields)
                 
-                # FeishuBitableWriter 成功时返回 resp_data，失败时会抛出异常
-                success_count += 1
-                write_success = True
-                logging.info(f"✓ 写入成功: {title}")
+                # 检查返回结果（与一键生成相同）
+                if add_result.get('code') == 0:
+                    success_count += 1
+                    write_success = True
+                    logging.info(f"✓ 写入成功: {title}")
+                else:
+                    write_error = add_result.get('msg', 'unknown error')
+                    logging.error(f"✗ 写入失败: {title} - {write_error}")
             except Exception as e:
                 import traceback
                 error_detail = traceback.format_exc()
