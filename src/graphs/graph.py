@@ -161,6 +161,40 @@ def parse_llm_json(content: str) -> dict:
             return json.loads(content[brace_start:brace_end + 1])
         except json.JSONDecodeError:
             pass
+    
+    # 策略4: 尝试修复不完整的JSON（LLM输出被截断的情况）
+    # 找到最后一个完整的键值对，尝试闭合
+    if brace_start != -1:
+        partial_json = content[brace_start:]
+        # 统计未闭合的括号
+        open_braces = partial_json.count('{') - partial_json.count('}')
+        open_brackets = partial_json.count('[') - partial_json.count(']')
+        open_quotes = 0
+        in_string = False
+        escape_next = False
+        for char in partial_json:
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+            elif not in_string:
+                pass
+        # 尝试添加闭合符号
+        if open_braces >= 0 and open_brackets >= 0:
+            try:
+                fixed_json = partial_json
+                # 如果在字符串中间截断，先闭合字符串
+                if in_string:
+                    fixed_json += '"'
+                # 闭合数组和对象
+                fixed_json += ']' * open_brackets + '}' * open_braces
+                return json.loads(fixed_json)
+            except json.JSONDecodeError:
+                pass
 
     raise ValueError(f"无法从LLM输出中解析JSON，原始内容前200字符: {content[:200]}")
 
