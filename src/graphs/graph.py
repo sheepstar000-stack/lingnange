@@ -1134,8 +1134,15 @@ def _generate_from_selection(
         
         try:
             # 调用LLM生成文案
+            logging.info(f"调用LLM生成文案: product={product_name}")
             result = llm_generate_json(sp, up_content, temperature=0.7, ctx=ctx)
+            logging.info(f"LLM返回结果类型: {type(result)}, 内容: {str(result)[:200] if result else 'None'}")
             
+            if not result:
+                logging.error(f"LLM返回空结果")
+                generated_contents.append(f"❌ {product_name} LLM返回空结果")
+                continue
+                
             # 解析结果
             title = result.get("发布标题", "")
             body = result.get("正文", "")
