@@ -192,9 +192,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_resource
-def get_feishu_token() -> str:
-    """获取飞书tenant_access_token"""
+def get_feishu_token() -> tuple:
+    """获取飞书tenant_access_token，返回 (token, error_msg)"""
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     payload = {
         "app_id": FEISHU_APP_ID,
@@ -205,18 +204,19 @@ def get_feishu_token() -> str:
         resp = requests.post(url, json=payload, headers=headers, timeout=10)
         data = resp.json()
         if data.get("code") == 0:
-            return data.get("tenant_access_token", "")
-    except Exception:
-        pass
-    return ""
+            return data.get("tenant_access_token", ""), ""
+        else:
+            return "", f"飞书认证失败: {data.get('msg', '未知错误')} (code: {data.get('code')})"
+    except Exception as e:
+        return "", f"网络请求异常: {str(e)}"
 
 
 @st.cache_data(ttl=300)
-def fetch_products() -> list:
-    """从飞书获取产品列表"""
-    token = get_feishu_token()
-    if not token:
-        return []
+def fetch_products() -> tuple:
+    """从飞书获取产品列表，返回 (products, error_msg)"""
+    token, error = get_feishu_token()
+    if error:
+        return [], error
     
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_CONFIG['app_token']}/tables/{FEISHU_CONFIG['product_table_id']}/records"
     headers = {
@@ -237,18 +237,19 @@ def fetch_products() -> list:
                 category = fields.get("分类", fields.get("产品分类", ""))
                 if name:
                     products.append({"name": name, "category": category, "record_id": item.get("record_id", "")})
-            return products
-    except Exception:
-        pass
-    return []
+            return products, ""
+        else:
+            return [], f"获取产品失败: {data.get('msg', '未知错误')} (code: {data.get('code')})"
+    except Exception as e:
+        return [], f"网络请求异常: {str(e)}"
 
 
 @st.cache_data(ttl=300)
-def fetch_hot_calendar() -> list:
-    """从飞书获取热点日历"""
-    token = get_feishu_token()
-    if not token:
-        return []
+def fetch_hot_calendar() -> tuple:
+    """从飞书获取热点日历，返回 (hots, error_msg)"""
+    token, error = get_feishu_token()
+    if error:
+        return [], error
     
     url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_CONFIG['app_token']}/tables/{FEISHU_CONFIG['hot_calendar_table_id']}/records"
     headers = {
@@ -270,10 +271,11 @@ def fetch_hot_calendar() -> list:
                 status = fields.get("状态", "")
                 if title:
                     hots.append({"title": title, "date": date, "status": status, "record_id": item.get("record_id", "")})
-            return hots
-    except Exception:
-        pass
-    return []
+            return hots, ""
+        else:
+            return [], f"获取热点失败: {data.get('msg', '未知错误')} (code: {data.get('code')})"
+    except Exception as e:
+        return [], f"网络请求异常: {str(e)}"
 
 
 def call_workflow(workflow_type: str, params: dict) -> dict:
@@ -394,8 +396,14 @@ def main():
         
         # 从飞书获取产品列表
         with st.spinner("正在加载产品和热点数据..."):
-            products_list = fetch_products()
-            hots_list = fetch_hot_calendar()
+            products_list, product_error = fetch_products()
+            hots_list, hot_error = fetch_hot_calendar()
+        
+        # 显示错误信息
+        if product_error:
+            st.error(f"📦 产品数据: {product_error}")
+        if hot_error:
+            st.error(f"🔥 热点数据: {hot_error}")
         
         # 产品选择
         st.markdown("### 📦 产品选择")
