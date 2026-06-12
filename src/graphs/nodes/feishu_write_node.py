@@ -120,6 +120,22 @@ def feishu_write_node(
     ctx = runtime.context
     
     try:
+        # 尝试获取 access_token
+        try:
+            access_token = get_feishu_access_token()
+            if not access_token:
+                return FeishuWriteOutput(
+                    success=False,
+                    record_id="",
+                    message="飞书集成未配置或access_token为空，请在Coze平台配置飞书集成"
+                )
+        except Exception as token_err:
+            return FeishuWriteOutput(
+                success=False,
+                record_id="",
+                message=f"获取飞书access_token失败: {str(token_err)[:200]}"
+            )
+        
         writer = FeishuBitableWriter()
         
         if state.record_id:
