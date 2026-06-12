@@ -1199,6 +1199,12 @@ def _generate_from_selection(
                 tags = result.get("发布标签", "")
                 shu_account = result.get("@薯账号", "")
                 comment_guide = result.get("评论区引导语", "")
+                ai_prompts = result.get("AI生图提示词", [])
+                # 如果AI生图提示词是列表，转为换行分隔的文本
+                if isinstance(ai_prompts, list):
+                    ai_prompts_text = "\n".join([f"{i+1}. {p}" for i, p in enumerate(ai_prompts)])
+                else:
+                    ai_prompts_text = str(ai_prompts) if ai_prompts else ""
                 
                 if not title or not body:
                     last_error = f"标题或正文为空: title={title[:20] if title else '空'}, body={body[:20] if body else '空'}"
@@ -1245,6 +1251,9 @@ def _generate_from_selection(
 【@薯账号】{shu_account}
 
 【评论区引导语】{comment_guide}
+
+【AI生图提示词】
+{ai_prompts_text}
 
 【发布账号】{state.publish_account}"""
                 
@@ -1506,6 +1515,12 @@ def _generate_from_selected_items(
             tags = result.get("发布标签", "")
             shu_account = result.get("@薯账号", "")
             comment_guide = result.get("评论区引导语", "")
+            ai_prompts = result.get("AI生图提示词", [])
+            # 如果AI生图提示词是列表，转为换行分隔的文本
+            if isinstance(ai_prompts, list):
+                ai_prompts_text = "\n".join([f"{i+1}. {p}" for i, p in enumerate(ai_prompts)])
+            else:
+                ai_prompts_text = str(ai_prompts) if ai_prompts else ""
             
             # 生成图片建议
             image_suggestion = ""
@@ -1550,7 +1565,8 @@ def _generate_from_selected_items(
 
 【@薯账号】{shu_account}
 
-【评论区引导语】{comment_guide}"""
+【AI生图提示词】
+{ai_prompts_text}"""
             
             generated_contents.append({
                 "title": title,
