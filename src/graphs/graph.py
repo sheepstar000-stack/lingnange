@@ -301,6 +301,10 @@ class WorkflowInput(BaseModel):
     # 内容整理参数
     filter_status: str = Field(default="待审核", description="筛选状态（如：待审核、已通过）")
     page_size: int = Field(default=10, description="读取记录数量")
+    
+    # 自选生成参数（从Streamlit界面传入）
+    selected_products: list = Field(default=[], description="选中的产品列表")
+    selected_hots: list = Field(default=[], description="选中的热点列表")
 
 
 class WorkflowOutput(BaseModel):
@@ -1081,9 +1085,146 @@ def feishu_weekly_review_workflow_node(
     )
 
 
+def _generate_from_selection(
+    state: WorkflowInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context],
+    ctx
+) -> FeishuWorkflowOutput:
+    """根据选中的产品和热点直接生成内容"""
+    
+    # 加载文案生成配置
+    cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_topic_post_cfg.json")
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        post_cfg = json.load(f)
+    
+    sp = post_cfg.get("sp", "")
+    
+    generated_contents = []
+    success_count = 0
+    
+    # 构建产品信息文本
+    products_text = ""
+    for p in state.selected_products:
+        products_text += f"- 产品名称: {p.get('name', '')}, 分类: {p.get('category', '')}\n"
+    
+    # 构建热点信息文本
+    hots_text = ""
+    for h in state.selected_hots:
+        hots_text += f"- 热点: {h.get('title', '')}, 时间: {h.get('date', '')}\n"
+    
+    # 为每个产品生成内容
+    for product in state.selected_products:
+        product_name = product.get('name', '未知产品')
+        product_category = product.get('category', '')
+        
+        # 构建选题角度
+        topic_angle = f"产品推荐: {product_name}"
+        if state.selected_hots:
+            hot_titles = [h.get('title', '') for h in state.selected_hots]
+            topic_angle = f"结合热点 {', '.join(hot_titles)} 推荐产品 {product_name}"
+        
+        # 构建用户提示词
+        up_template = post_cfg.get("up", "")
+        up_content = up_template.replace("{{topic_angle}}", topic_angle)
+        up_content = up_content.replace("{{product_info}}", f"产品: {product_name}, 分类: {product_category}")
+        up_content = up_content.replace("{{account}}", state.publish_account)
+        
+        try:
+            # 调用LLM生成文案
+            result = llm_generate_json(sp, up_content, temperature=0.7, ctx=ctx)
+            
+            # 解析结果
+            title = result.get("发布标题", "")
+            body = result.get("正文", "")
+            cover_text = result.get("封面文案", "")
+            tags = result.get("发布标签", "")
+            shu_account = result.get("@薯账号", "")
+            comment_guide = result.get("评论区引导语", "")
+            
+            # 生成图片建议
+            image_suggestion = ""
+            try:
+                image_cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_image_suggestion_cfg.json")
+                with open(image_cfg_path, 'r', encoding='utf-8') as f:
+                    image_cfg = json.load(f)
+                
+                image_prompt = f"""请为以下小红书内容生成图片拍摄建议：
+
+标题：{title}
+正文：{body[:200]}...
+
+请按格式输出纯文本配图方案（不要输出JSON）。"""
+                
+                image_suggestion = llm_generate_text(image_cfg.get("sp", ""), image_prompt, temperature=0.7, ctx=ctx)
+            except Exception as e:
+                logging.warning(f"图片建议生成失败: {e}")
+            
+            # 整理内容
+            content_organized = f"""【标题】{title}
+
+【正文】
+{body}
+
+【封面文案】{cover_text}
+
+【图片建议】
+{image_suggestion}
+
+【标签】{tags}
+
+【@薯账号】{shu_account}
+
+【评论区引导语】{comment_guide}
+
+【发布账号】{state.publish_account}"""
+            
+            generated_contents.append(content_organized)
+            
+            # 写入飞书表格
+            try:
+                write_input = FeishuWriteInput(
+                    app_token=state.feishu_app_token,
+                    table_id=state.feishu_content_table_id,
+                    fields={
+                        "发布标题": title,
+                        "正文": body,
+                        "封面文案": cover_text,
+                        "图片建议": image_suggestion,
+                        "发布标签": tags,
+                        "@薯账号": shu_account,
+                        "评论区引导语": comment_guide,
+                        "发布账号": state.publish_account,
+                        "发布状态": "待审核",
+                        "内容整理": content_organized
+                    }
+                )
+                write_output = feishu_write_node(write_input, config, runtime)
+                if write_output.success:
+                    success_count += 1
+                    logging.info(f"✓ 已写入内容: {title}")
+            except Exception as e:
+                logging.error(f"写入失败: {e}")
+                
+        except Exception as e:
+            logging.error(f"生成失败: {product_name} - {e}")
+            generated_contents.append(f"❌ {product_name} 生成失败: {str(e)[:100]}")
+    
+    result_text = f"✨ 自选生成完成！\n\n选中产品: {len(state.selected_products)} 个\n选中热点: {len(state.selected_hots)} 个\n生成内容: {len(generated_contents)} 篇\n成功写入: {success_count} 篇\n\n"
+    result_text += "\n" + "="*50 + "\n".join(generated_contents)
+    
+    return FeishuWorkflowOutput(
+        workflow_type="内容整理",
+        result=result_text,
+        processed_count=len(state.selected_products),
+        success_count=success_count
+    )
+
+
 # ============================================
 # 工作流⑥：内容整理
 # 从内容成品库读取数据，整理输出标题、正文、封面文案、图片建议、标签、@官方号
+# 或根据选中的产品和热点直接生成内容
 # ============================================
 def feishu_content_organize_workflow_node(
     state: WorkflowInput,
@@ -1092,11 +1233,16 @@ def feishu_content_organize_workflow_node(
 ) -> FeishuWorkflowOutput:
     """
     title: 内容整理
-    desc: 从内容成品库读取数据，整理输出标题、正文、封面文案、图片建议、标签、@官方号
-    integrations: 飞书多维表格
+    desc: 从内容成品库读取数据整理输出，或根据选中的产品和热点直接生成内容
+    integrations: 飞书多维表格, 大语言模型
     """
     ctx = runtime.context
 
+    # 如果传入了选中的产品或热点，走直接生成流程
+    if state.selected_products or state.selected_hots:
+        return _generate_from_selection(state, config, runtime, ctx)
+
+    # 否则走原有的从内容成品库读取流程
     # 步骤1: 从内容成品库读取数据
     content_input = FeishuReadInput(
         app_token=state.feishu_app_token,
@@ -1174,6 +1320,184 @@ def feishu_content_organize_workflow_node(
     )
 
 
+def _generate_from_selected_items(
+    state: WorkflowInput,
+    config: RunnableConfig,
+    runtime: Runtime[Context],
+    ctx,
+    app_token: str,
+    content_table_id: str,
+    publish_account: str
+) -> FeishuWorkflowOutput:
+    """根据自选的产品和热点生成内容（一键生成工作流专用）"""
+    
+    logging.info(f"🎨 自选生成: {len(state.selected_products)} 个产品, {len(state.selected_hots)} 个热点")
+    
+    # 加载文案生成配置
+    cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_topic_post_cfg.json")
+    with open(cfg_path, 'r', encoding='utf-8') as f:
+        post_cfg = json.load(f)
+    
+    sp = post_cfg.get("sp", "")
+    up_template = post_cfg.get("up", "")
+    
+    llm_client = LLMClient()
+    generated_contents = []
+    success_count = 0
+    
+    # 构建热点文本
+    hots_text = ""
+    if state.selected_hots:
+        hot_titles = [h.get('title', '') for h in state.selected_hots]
+        hots_text = f"结合热点：{', '.join(hot_titles)}"
+    
+    # 为每个产品生成内容
+    for product in state.selected_products:
+        product_name = product.get('name', '未知产品')
+        product_category = product.get('category', '')
+        
+        # 构建选题角度
+        if state.selected_hots:
+            hot_titles = [h.get('title', '') for h in state.selected_hots]
+            topic_angle = f"结合热点「{', '.join(hot_titles)}」推荐产品「{product_name}」"
+        else:
+            topic_angle = f"产品推荐: {product_name}"
+        
+        # 构建用户提示词
+        up_content = up_template.replace("{{topic_angle}}", topic_angle)
+        up_content = up_content.replace("{{product_info}}", f"产品: {product_name}, 分类: {product_category}")
+        up_content = up_content.replace("{{account}}", publish_account)
+        
+        logging.info(f"  生成文案: {product_name}")
+        
+        try:
+            # 调用LLM生成文案
+            response = llm_client.invoke(
+                messages=[
+                    SystemMessage(content=sp),
+                    HumanMessage(content=up_content)
+                ],
+                model=post_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
+                temperature=post_cfg.get("config", {}).get("temperature", 0.7),
+                max_completion_tokens=post_cfg.get("config", {}).get("max_completion_tokens", 4096)
+            )
+            
+            content = response.content if hasattr(response, 'content') else str(response)
+            result = parse_llm_json(content)
+            
+            # 解析结果
+            title = result.get("发布标题", "")
+            body = result.get("正文", "")
+            cover_text = result.get("封面文案", "")
+            tags = result.get("发布标签", "")
+            shu_account = result.get("@薯账号", "")
+            comment_guide = result.get("评论区引导语", "")
+            
+            # 生成图片建议
+            image_suggestion = ""
+            try:
+                image_cfg_path = os.path.join(os.getenv("COZE_WORKSPACE_PATH"), "config/feishu_image_suggestion_cfg.json")
+                with open(image_cfg_path, 'r', encoding='utf-8') as f:
+                    image_cfg = json.load(f)
+                
+                image_prompt = f"""请为以下小红书内容生成图片拍摄建议：
+
+标题：{title}
+正文：{body[:200]}...
+
+请按格式输出纯文本配图方案（不要输出JSON）。"""
+                
+                img_response = llm_client.invoke(
+                    messages=[
+                        SystemMessage(content=image_cfg.get("sp", "")),
+                        HumanMessage(content=image_prompt)
+                    ],
+                    model=image_cfg.get("config", {}).get("model", "doubao-seed-2-0-pro-260215"),
+                    temperature=0.7,
+                    max_completion_tokens=4096
+                )
+                image_content = img_response.content if hasattr(img_response, 'content') else str(img_response)
+                image_suggestion = str(image_content).strip()
+            except Exception as e:
+                logging.warning(f"图片建议生成失败: {e}")
+            
+            # 整理内容格式
+            content_organized = f"""【标题】{title}
+
+【正文】
+{body}
+
+【封面文案】{cover_text}
+
+【图片建议】
+{image_suggestion}
+
+【标签】{tags}
+
+【@薯账号】{shu_account}
+
+【评论区引导语】{comment_guide}"""
+            
+            generated_contents.append({
+                "title": title,
+                "body": body,
+                "cover_text": cover_text,
+                "image_suggestion": image_suggestion,
+                "tags": tags,
+                "shu_account": shu_account,
+                "comment_guide": comment_guide,
+                "content_organized": content_organized
+            })
+            
+            # 写入飞书表格
+            try:
+                write_input = FeishuWriteInput(
+                    app_token=app_token,
+                    table_id=content_table_id,
+                    fields={
+                        "发布标题": title,
+                        "正文": body,
+                        "封面文案": cover_text,
+                        "图片建议": image_suggestion,
+                        "发布标签": tags,
+                        "@薯账号": shu_account,
+                        "评论区引导语": comment_guide,
+                        "发布账号": publish_account,
+                        "发布状态": "待审核",
+                        "内容整理": content_organized
+                    }
+                )
+                write_output = feishu_write_node(write_input, config, runtime)
+                if write_output.success:
+                    success_count += 1
+                    logging.info(f"  ✓ 已写入: {title}")
+            except Exception as e:
+                logging.error(f"  ✗ 写入失败: {e}")
+                
+        except Exception as e:
+            logging.error(f"  ✗ 生成失败: {product_name} - {e}")
+    
+    # 构建结果文本
+    result_text = f"🎯 自选生成完成！\n\n"
+    result_text += f"选中产品: {len(state.selected_products)} 个\n"
+    result_text += f"选中热点: {len(state.selected_hots)} 个\n"
+    result_text += f"生成内容: {len(generated_contents)} 篇\n"
+    result_text += f"成功写入: {success_count} 篇\n\n"
+    
+    for i, content in enumerate(generated_contents, 1):
+        result_text += f"\n{'='*50}\n"
+        result_text += f"第{i}篇: {content['title']}\n"
+        result_text += f"{'='*50}\n"
+        result_text += content['content_organized']
+    
+    return FeishuWorkflowOutput(
+        workflow_type="一键生成",
+        result=result_text,
+        processed_count=len(state.selected_products),
+        success_count=success_count
+    )
+
+
 # ============================================
 # 一键生成工作流
 # ============================================
@@ -1196,6 +1520,11 @@ def one_click_generate_workflow_node(
     TOPIC_TABLE = state.feishu_topic_table_id or "tblJNjx74uZ3s1vs"
     CONTENT_TABLE = state.feishu_content_table_id or "tblg7zZuWKcUvqQX"
     publish_account = state.publish_account or "灵楠阁品牌号"
+    
+    # ========== 检查是否有自选产品和热点 ==========
+    if state.selected_products or state.selected_hots:
+        logging.info("🎯 检测到自选产品和热点，走自选生成流程...")
+        return _generate_from_selected_items(state, config, runtime, ctx, APP_TOKEN, CONTENT_TABLE, publish_account)
     
     # ========== 步骤1: 生成选题 ==========
     print("📝 步骤1: 正在生成选题...")
