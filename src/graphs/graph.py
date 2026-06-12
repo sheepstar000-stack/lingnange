@@ -1101,8 +1101,11 @@ def _generate_from_selection(
     
     sp = post_cfg.get("sp", "")
     
-    generated_contents = []
+    generated_contents = []  # 存储生成的内容
+    error_messages = []  # 存储错误信息
+    status_messages = []  # 存储状态消息
     success_count = 0
+    content_count = 0  # 实际生成的内容篇数
     
     # 构建产品信息文本
     products_text = ""
@@ -1248,11 +1251,13 @@ def _generate_from_selection(
                         logging.error(f"写入异常(尝试{write_retry+1}): {write_error}\n{traceback.format_exc()}")
                 
                 # 记录结果
+                content_count += 1
+                generated_contents.append(content_organized)
                 if write_success:
-                    generated_contents.append(content_organized)
-                    generated_contents.append(f"✅ {title} 已写入飞书")
+                    success_count += 1
+                    status_messages.append(f"✅ {title} 已写入飞书")
                 else:
-                    generated_contents.append(f"❌ {title} 写入失败(重试{max_retries}次): {write_error[:200]}")
+                    error_messages.append(f"❌ {title} 写入失败(重试{max_retries}次): {write_error[:200]}")
                 
                 # 生成成功，跳出重试循环
                 break
@@ -1262,9 +1267,20 @@ def _generate_from_selection(
                 last_error = f"{str(e)}\n{traceback.format_exc()}"
                 logging.error(f"生成异常(尝试{retry_count}): {last_error}")
                 if retry_count >= max_retries:
-                    generated_contents.append(f"❌ {product_name} 生成失败(重试{max_retries}次): {str(e)[:100]}")
+                    error_messages.append(f"❌ {product_name} 生成失败(重试{max_retries}次): {str(e)[:100]}")
     
-    result_text = f"✨ 自选生成完成！\n\n选中产品: {len(state.selected_products)} 个\n选中热点: {len(state.selected_hots)} 个\n生成内容: {len(generated_contents)} 篇\n成功写入: {success_count} 篇\n\n"
+    # 构建结果文本
+    result_text = f"✨ 自选生成完成！\n\n选中产品: {len(state.selected_products)} 个\n选中热点: {len(state.selected_hots)} 个\n生成内容: {content_count} 篇\n成功写入: {success_count} 篇\n\n"
+    
+    # 添加错误信息
+    if error_messages:
+        result_text += "⚠️ 错误信息:\n" + "\n".join(error_messages) + "\n\n"
+    
+    # 添加成功消息
+    if status_messages:
+        result_text += "\n".join(status_messages) + "\n\n"
+    
+    # 添加生成的内容
     result_text += "\n" + "="*50 + "\n".join(generated_contents)
     
     return FeishuWorkflowOutput(
