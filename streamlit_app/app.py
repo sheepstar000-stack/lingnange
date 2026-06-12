@@ -272,7 +272,30 @@ def main():
                 else:
                     st.success("✅ 工作流执行完成！")
                     st.markdown('<div class="result-box">', unsafe_allow_html=True)
-                    st.json(result)
+                    
+                    # 美化显示结果
+                    if "result" in result:
+                        result_text = result["result"]
+                        # 处理包含分隔符的长文本
+                        if "==================================================" in result_text:
+                            parts = result_text.split("==================================================")
+                            for i, part in enumerate(parts):
+                                if part.strip():
+                                    if i == 0:
+                                        # 第一部分是统计信息
+                                        st.markdown(f"### 📊 执行统计")
+                                        st.markdown(part)
+                                    else:
+                                        # 后续是具体内容
+                                        st.markdown(f"---")
+                                        st.markdown(part)
+                        else:
+                            st.markdown(result_text)
+                    
+                    # 显示其他字段
+                    if "processed_count" in result:
+                        st.info(f"📝 处理数量: {result.get('processed_count', 0)} | 成功: {result.get('success_count', 0)}")
+                    
                     st.markdown('</div>', unsafe_allow_html=True)
     
     # ==================== Tab2: 自选生成 ====================
@@ -336,11 +359,40 @@ def main():
                         st.success("✅ 内容生成完成！")
                         st.markdown('<div class="result-box">', unsafe_allow_html=True)
                         
-                        # 显示生成结果
+                        # 美化显示结果
                         if "result" in result:
-                            st.markdown(result["result"])
-                        else:
-                            st.json(result)
+                            result_text = result["result"]
+                            # 处理包含分隔符的长文本
+                            if "==================================================" in result_text:
+                                parts = result_text.split("==================================================")
+                                for i, part in enumerate(parts):
+                                    if part.strip():
+                                        if i == 0:
+                                            st.markdown(f"### 📊 执行统计")
+                                            st.markdown(part)
+                                        else:
+                                            st.markdown(f"---")
+                                            # 解析内容结构
+                                            if "【标题】" in part:
+                                                lines = part.strip().split("\n")
+                                                current_section = ""
+                                                for line in lines:
+                                                    if line.startswith("【") and "】" in line:
+                                                        section_name = line.split("】")[0] + "】"
+                                                        st.markdown(f"#### {section_name}")
+                                                        current_section = line.split("】")[1] if "】" in line else ""
+                                                        if current_section:
+                                                            st.markdown(current_section)
+                                                    else:
+                                                        st.markdown(line)
+                                            else:
+                                                st.markdown(part)
+                            else:
+                                st.markdown(result_text)
+                        
+                        # 显示其他字段
+                        if "processed_count" in result:
+                            st.info(f"📝 处理数量: {result.get('processed_count', 0)} | 成功: {result.get('success_count', 0)}")
                         
                         st.markdown('</div>', unsafe_allow_html=True)
     
