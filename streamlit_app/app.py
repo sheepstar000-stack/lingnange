@@ -193,7 +193,7 @@ def call_workflow(workflow_type: str, params: dict) -> dict:
     if "api_url" in st.session_state and st.session_state.api_url:
         api_url = st.session_state.api_url
     else:
-        api_url = os.getenv("API_URL", os.getenv("BACKEND_URL", "http://localhost:5000/run"))
+        api_url = os.getenv("API_URL", os.getenv("BACKEND_URL", "https://jv7dr2vk3d.coze.site/run"))
     
     payload = {
         "workflow_type": workflow_type,
