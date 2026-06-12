@@ -195,17 +195,26 @@ def call_workflow(workflow_type: str, params: dict) -> dict:
     else:
         api_url = os.getenv("API_URL", os.getenv("BACKEND_URL", "https://jv7dr2vk3d.coze.site/run"))
     
+    # 获取API Token
+    api_token = st.session_state.get("api_token", "")
+    
     payload = {
         "workflow_type": workflow_type,
         **params
     }
     
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
+    
     try:
-        resp = requests.post(api_url, json=payload, timeout=300)
+        resp = requests.post(api_url, json=payload, headers=headers, timeout=300)
         if resp.status_code == 200:
             return resp.json()
         else:
-            return {"error": f"API请求失败: {resp.status_code}"}
+            return {"error": f"API请求失败: {resp.status_code} - {resp.text[:200]}"}
     except Exception as e:
         return {"error": f"API调用异常: {str(e)}"}
 
@@ -340,10 +349,14 @@ def main():
         st.markdown('<div class="card-title">⚙️ API配置</div>', unsafe_allow_html=True)
         
         # API URL配置
-        default_api_url = os.getenv("API_URL", os.getenv("BACKEND_URL", "http://localhost:5000/run"))
+        default_api_url = os.getenv("API_URL", os.getenv("BACKEND_URL", "https://jv7dr2vk3d.coze.site/run"))
         st.markdown("**后端API地址**")
         api_url_input = st.text_input("API URL", value=default_api_url, key="api_url_input")
-        st.markdown("*提示：部署后填写实际的后端服务地址，如 http://your-server:5000/run*")
+        
+        # API Token配置
+        st.markdown("**API Token**")
+        st.markdown("*提示：在Coze平台部署详情页可以查看API Token*")
+        api_token_input = st.text_input("API Token", type="password", key="api_token_input", placeholder="请输入API Token进行认证")
         
         st.markdown('<div class="card-title">⚙️ 飞书表格配置</div>', unsafe_allow_html=True)
         
@@ -372,8 +385,11 @@ def main():
             FEISHU_CONFIG['content_table_id'] = content_table
             FEISHU_CONFIG['hot_calendar_table_id'] = hot_calendar
             st.session_state.api_url = api_url_input
+            st.session_state.api_token = api_token_input
             st.success("✅ 配置已保存！")
             st.info(f"当前API地址: {api_url_input}")
+            if api_token_input:
+                st.info(f"API Token已设置（长度: {len(api_token_input)}字符）")
 
 
 if __name__ == "__main__":
