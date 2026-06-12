@@ -1114,9 +1114,10 @@ def _generate_from_selection(
         hots_text += f"- 热点: {h.get('title', '')}, 时间: {h.get('date', '')}\n"
     
     # 为每个产品生成内容
-    for product in state.selected_products:
+    for idx, product in enumerate(state.selected_products):
         product_name = product.get('name', '未知产品')
         product_category = product.get('category', '')
+        logging.info(f"  [{idx+1}/{len(state.selected_products)}] 开始处理: {product_name}")
         
         # 构建选题角度
         topic_angle = f"产品推荐: {product_name}"
@@ -1475,7 +1476,9 @@ def _generate_from_selected_items(
                 logging.error(f"  ✗ 写入失败: {e}")
                 
         except Exception as e:
+            import traceback
             logging.error(f"  ✗ 生成失败: {product_name} - {e}")
+            logging.error(f"  详细堆栈: {traceback.format_exc()}")
     
     # 构建结果文本
     result_text = f"🎯 自选生成完成！\n\n"
