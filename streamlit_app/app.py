@@ -9,14 +9,13 @@ TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImMwNTQ1ZjM1LWY0M2YtNDU1OS1iNmUzLTc3ODc1MTF
 
 # 飞书API配置
 FEISHU_API = 'https://open.feishu.cn/open-apis/bitable/v1/apps'
-FEISHU_TENANT_TOKEN = 't-g1044f2CHPQ62SIQJ5MZJZP6P4EHHVGSNP4HI5KJ'
 
 # 预填飞书表格ID
 FEISHU_CONFIG = {
-    'app_token': 'FoWqb7NLuah1gdssEHbc7Wk9nQh',
+    'app_token': 'HF7dYv7ubaLkWss7d3fVcA4ynugcqhJJfAbpmc',  # 使用正确的app_token
     'product_table_id': 'tbllExTlKURFJP2j',
     'topic_table_id': 'tblJNjx74uZ3s1vs',
-    'content_table_id': 'tblg7zZuWKcUvqQX',
+    'content_table_id': 'tblsCeJXz0OcL01T',
     'review_table_id': 'tblZ3EZ74uZ3s1vs',
     'hot_calendar_table_id': 'tblT1KM0397UcGeM'
 }
@@ -171,13 +170,38 @@ st.set_page_config(
     initial_sidebar_state='collapsed'
 )
 
+# 飞书应用配置（用于获取 tenant_access_token）
+FEISHU_APP_ID = 'cli_a7b3e1d2f5g6h8i9'
+FEISHU_APP_SECRET = 'your_app_secret'  # 需要填入实际的 app_secret
+
+def get_feishu_tenant_token() -> str:
+    """获取飞书 tenant_access_token"""
+    try:
+        url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        response = requests.post(url, json={
+            "app_id": FEISHU_APP_ID,
+            "app_secret": FEISHU_APP_SECRET
+        }, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('tenant_access_token', '')
+    except Exception:
+        pass
+    return ''
+
 # 获取飞书数据
 def fetch_feishu_data(app_token: str, table_id: str) -> list:
     """从飞书多维表格获取数据"""
     try:
+        # 尝试获取 tenant_access_token
+        token = get_feishu_tenant_token()
+        if not token:
+            # 如果获取失败，使用预设的 token
+            token = 't-g1044f2CHPQ62SIQJ5MZJZP6P4EHHVGSNP4HI5KJ'
+        
         url = f"{FEISHU_API}/{app_token}/tables/{table_id}/records"
         headers = {
-            'Authorization': f'Bearer {FEISHU_TENANT_TOKEN}',
+            'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json'
         }
         params = {'page_size': 100}
@@ -187,6 +211,8 @@ def fetch_feishu_data(app_token: str, table_id: str) -> list:
         if response.status_code == 200:
             data = response.json()
             return data.get('data', {}).get('items', [])
+        else:
+            st.warning(f'飞书API返回: {response.status_code}')
         return []
     except Exception as e:
         st.warning(f'获取数据失败: {str(e)[:50]}')
@@ -301,15 +327,68 @@ with tab2:
     st.markdown('<div class="card-title">🎨 自选产品与热点生成</div>', unsafe_allow_html=True)
     st.markdown('选择特定的产品和热点，生成定制化的内容')
     
-    # 获取产品数据
+    # 预设的产品和热点（备用，当飞书API不可用时使用）
+    PRESET_PRODUCTS = [
+        {'name': '金丝楠小凳', 'category': '家具', 'record_id': 'preset_1'},
+        {'name': '金丝楠茶盘', 'category': '茶器', 'record_id': 'preset_2'},
+        {'name': '金丝楠香炉', 'category': '香器', 'record_id': 'preset_3'},
+        {'name': '金丝楠笔筒', 'category': '文房', 'record_id': 'preset_4'},
+        {'name': '金丝楠手串', 'category': '饰品', 'record_id': 'preset_5'},
+        {'name': '金丝楠花架', 'category': '家具', 'record_id': 'preset_6'},
+        {'name': '金丝楠博古架', 'category': '家具', 'record_id': 'preset_7'},
+        {'name': '金丝楠茶杯', 'category': '茶器', 'record_id': 'preset_8'},
+    ]
+    
+    PRESET_HOTS = [
+        {'title': '端午节', 'date': '2025-05-31', 'record_id': 'hot_1'},
+        {'title': '父亲节', 'date': '2025-06-15', 'record_id': 'hot_2'},
+        {'title': '618购物节', 'date': '2025-06-18', 'record_id': 'hot_3'},
+        {'title': '夏至', 'date': '2025-06-21', 'record_id': 'hot_4'},
+        {'title': '毕业季', 'date': '2025-06-07', 'record_id': 'hot_5'},
+        {'title': '七夕节', 'date': '2025-08-10', 'record_id': 'hot_6'},
+    ]
+    
+    # 尝试获取飞书数据
     with st.spinner('📂 正在加载产品数据...'):
         products = fetch_feishu_data(FEISHU_CONFIG['app_token'], FEISHU_CONFIG['product_table_id'])
     
-    # 获取热点数据
     with st.spinner('📅 正在加载热点数据...'):
         hot_topics = fetch_feishu_data(FEISHU_CONFIG['app_token'], FEISHU_CONFIG['hot_calendar_table_id'])
     
-    if products or hot_topics:
+    # 如果飞书数据为空，使用预设数据
+    if not products:
+        st.info('💡 使用预设产品列表（飞书数据暂不可用）')
+        products_data = PRESET_PRODUCTS
+    else:
+        products_data = []
+        for item in products[:20]:
+            fields = item.get('fields', {})
+            name = extract_field(fields, '产品名称') or extract_field(fields, '名称')
+            category = extract_field(fields, '分类') or extract_field(fields, '产品分类')
+            if name:
+                products_data.append({
+                    'name': name,
+                    'category': category,
+                    'record_id': item.get('record_id', '')
+                })
+    
+    if not hot_topics:
+        st.info('💡 使用预设热点列表（飞书数据暂不可用）')
+        hots_data = PRESET_HOTS
+    else:
+        hots_data = []
+        for item in hot_topics[:20]:
+            fields = item.get('fields', {})
+            title = extract_field(fields, '热点名称') or extract_field(fields, '事件') or extract_field(fields, '名称')
+            date = extract_field(fields, '日期') or extract_field(fields, '时间') or extract_field(fields, '热点日期')
+            if title:
+                hots_data.append({
+                    'title': title,
+                    'date': date,
+                    'record_id': item.get('record_id', '')
+                })
+    
+    if products_data or hots_data:
         col1, col2 = st.columns(2)
         
         # 产品选择
@@ -318,26 +397,18 @@ with tab2:
             product_options = []
             product_map = {}
             
-            for item in products[:20]:  # 限制显示数量
-                fields = item.get('fields', {})
-                name = extract_field(fields, '产品名称')
-                category = extract_field(fields, '分类')
-                if name:
-                    display_name = f"{name} ({category})" if category else name
-                    product_options.append(display_name)
-                    product_map[display_name] = {
-                        'name': name,
-                        'category': category,
-                        'record_id': item.get('record_id', '')
-                    }
+            for p in products_data:
+                display_name = f"{p['name']} ({p['category']})" if p.get('category') else p['name']
+                product_options.append(display_name)
+                product_map[display_name] = p
             
             selected_products = st.multiselect(
-                '选择要生成内容的产品',
+                '选择要生成内容的产品（可多选）',
                 product_options,
                 help='可以选择多个产品，每个产品生成一篇内容'
             )
             
-            # 显示选中产品详情
+            # 显示选中产品
             if selected_products:
                 st.markdown('**已选产品:**')
                 for p in selected_products:
@@ -349,21 +420,13 @@ with tab2:
             hot_options = []
             hot_map = {}
             
-            for item in hot_topics[:20]:
-                fields = item.get('fields', {})
-                title = extract_field(fields, '热点名称') or extract_field(fields, '事件')
-                date = extract_field(fields, '日期') or extract_field(fields, '时间')
-                if title:
-                    display_name = f"{title} ({date})" if date else title
-                    hot_options.append(display_name)
-                    hot_map[display_name] = {
-                        'title': title,
-                        'date': date,
-                        'record_id': item.get('record_id', '')
-                    }
+            for h in hots_data:
+                display_name = f"{h['title']} ({h['date']})" if h.get('date') else h['title']
+                hot_options.append(display_name)
+                hot_map[display_name] = h
             
             selected_hots = st.multiselect(
-                '选择要结合的热点',
+                '选择要结合的热点（可多选）',
                 hot_options,
                 help='选择热点会让内容更有时效性'
             )
@@ -390,28 +453,15 @@ with tab2:
             if st.button('✨ 生成定制内容', type='primary', use_container_width=True, key='custom_generate'):
                 if selected_products or selected_hots:
                     st.session_state['custom_run'] = True
-                    st.session_state['selected_products'] = selected_products
-                    st.session_state['selected_hots'] = selected_hots
+                    st.session_state['selected_products'] = [product_map[p] for p in selected_products]
+                    st.session_state['selected_hots'] = [hot_map[h] for h in selected_hots]
                     st.session_state['custom_account'] = custom_account
                 else:
                     st.warning('请至少选择一个产品或热点')
         
         # 执行自选生成
         if st.session_state.get('custom_run', False):
-            # 构建产品信息
-            product_info_list = []
-            for p_name in st.session_state.get('selected_products', []):
-                if p_name in product_map:
-                    product_info_list.append(product_map[p_name])
-            
-            # 构建热点信息
-            hot_info_list = []
-            for h_name in st.session_state.get('selected_hots', []):
-                if h_name in hot_map:
-                    hot_info_list.append(hot_map[h_name])
-            
-            with st.spinner('🔄 正在生成定制内容...'):
-                # 使用一键生成工作流，传入选择的产品和热点
+            with st.spinner('🔄 正在生成定制内容，请耐心等待...'):
                 payload = {
                     'workflow_type': '一键生成',
                     'publish_account': st.session_state.get('custom_account', '灵楠阁品牌号'),
@@ -420,8 +470,8 @@ with tab2:
                     'feishu_topic_table_id': FEISHU_CONFIG['topic_table_id'],
                     'feishu_content_table_id': FEISHU_CONFIG['content_table_id'],
                     'feishu_hot_calendar_table_id': FEISHU_CONFIG['hot_calendar_table_id'],
-                    'selected_products': product_info_list,
-                    'selected_hots': hot_info_list
+                    'selected_products': st.session_state.get('selected_products', []),
+                    'selected_hots': st.session_state.get('selected_hots', [])
                 }
                 
                 headers = {
@@ -449,9 +499,7 @@ with tab2:
             st.session_state['custom_run'] = False
     
     else:
-        st.warning('⚠️ 暂无法加载产品或热点数据，请检查飞书连接')
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.warning('⚠️ 暂无可用数据')
 
 # ==================== Tab3: 高级设置 ====================
 with tab3:
