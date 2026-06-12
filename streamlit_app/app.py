@@ -2,16 +2,12 @@ import streamlit as st
 import requests
 import json
 import os
-import sys
-
-# 添加项目路径以导入飞书读取模块
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # API配置
 API_URL = 'https://jv7dr2vk3d.coze.site/run'
 TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6ImMwNTQ1ZjM1LWY0M2YtNDU1OS1iNmUzLTc3ODc1MTFiZDc4YiJ9.eyJpc3MiOiJodHRwczovL2FwaS5jb3plLmNuIiwiYXVkIjpbIlpoZFlSU0NXMVlLZEhvNmNaVWlDaXpjMVY0M2dGUkRvIl0sImV4cCI6ODIxMDI2Njg3Njc5OSwiaWF0IjoxNzgwODk4NTYwLCJzdWIiOiJzcGlmZmU6Ly9hcGkuY296ZS5jbi93b3JrbG9hZF9pZGVudGl0eS9pZDo3NjQ3MDEzMzg4NjAxNTI0MjI0Iiwic3JjIjoiaW5ib3VuZF9hdXRoX2FjY2Vzc190b2tlbl9pZDo3NjQ4OTAxMDcyNzMxMjQyNTAyIn0.FBHQs6vSVwDqTteTyqXNANC5-sOTi00OUeiPF6zRE_uPU3Bf5J7NmhF3acywTh4Tqb8yYJ5cqJWlPf-vdBJOevaX4lZxwzMk3ybICThjC7lCCEd9jvjw2rBinv_0OGYfL9jonIWwo4L6AGIeM1qkOGityYIrau8iFffhTlpkVTCYNKM3cpWH3RV2AIdp3wJBMll6jSJnYZLCws7aT9C1v9LQQrzWzfmVPSunbGOAiARv95u2tSjR32MEkJqKaCkWg2oKy1hMdKSE8kkcZ_3xZA304xcm0jjZrZxNhNhOVjRiruz0zWPjCIoSN8oUPCz0Ibdge4-QnMrTwDQPfR4bLg'
 
-# 预填飞书表格ID
+# 飞书配置
 FEISHU_CONFIG = {
     'app_token': 'HF7dYv7ubaLkWss7d3fVcA4ynugcqhJJfAbpmc',
     'product_table_id': 'tbllExTlKURFJP2j',
@@ -32,9 +28,9 @@ st.set_page_config(
 # 自定义CSS样式
 st.markdown("""
 <style>
-    /* 全局背景 */
+    /* 全局背景 - 温暖的米色渐变 */
     .stApp {
-        background: linear-gradient(135deg, #f5f0e8 0%, #e8e0d5 100%);
+        background: linear-gradient(135deg, #f5f0e8 0%, #e8e0d5 100%) !important;
     }
     
     /* 主容器 */
@@ -61,7 +57,7 @@ st.markdown("""
     
     /* 卡片样式 */
     .card {
-        background: #fffdf8;
+        background: #fffdf8 !important;
         border-radius: 12px;
         padding: 1.5rem;
         box-shadow: 0 2px 8px rgba(74, 55, 40, 0.08);
@@ -72,15 +68,15 @@ st.markdown("""
     /* Tab样式 */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background: transparent;
+        background: transparent !important;
     }
     
     .stTabs [data-baseweb="tab"] {
-        background: #fffdf8;
+        background: #fffdf8 !important;
         border-radius: 8px 8px 0 0;
         padding: 10px 20px;
         font-weight: 500;
-        color: #7a6a5a;
+        color: #7a6a5a !important;
         border: 1px solid #e8e0d5;
         border-bottom: none;
     }
@@ -92,7 +88,7 @@ st.markdown("""
     }
     
     .stTabs [data-baseweb="tab-panel"] {
-        background: #fff;
+        background: #fff !important;
         border-radius: 0 0 12px 12px;
         padding: 1.5rem;
         border: 1px solid #e8e0d5;
@@ -101,9 +97,9 @@ st.markdown("""
     
     /* 按钮样式 */
     .stButton>button {
-        background: linear-gradient(135deg, #8b7355 0%, #6b5344 100%);
-        color: white;
-        border: none;
+        background: linear-gradient(135deg, #8b7355 0%, #6b5344 100%) !important;
+        color: white !important;
+        border: none !important;
         border-radius: 8px;
         padding: 0.6rem 1.5rem;
         font-weight: 500;
@@ -111,28 +107,72 @@ st.markdown("""
     }
     
     .stButton>button:hover {
-        background: linear-gradient(135deg, #6b5344 0%, #4a3728 100%);
+        background: linear-gradient(135deg, #6b5344 0%, #4a3728 100%) !important;
+        color: white !important;
     }
     
-    /* 下拉选择框 */
-    .stMultiSelect, .stSelectbox {
-        background: #fffdf8;
+    /* 下拉选择框 - 强制深色文字 */
+    .stMultiSelect label, .stSelectbox label {
+        color: #4a3728 !important;
+        font-weight: 500 !important;
     }
     
-    /* 输入框 */
-    .stTextInput>div>div>input, .stTextArea>div>div>textarea {
-        background: #fffdf8;
-        border: 1px solid #e8e0d5;
-        border-radius: 8px;
+    .stMultiSelect div[data-baseweb="select"] > div,
+    .stSelectbox div[data-baseweb="select"] > div {
+        background: #fffdf8 !important;
+        border: 1px solid #e8e0d5 !important;
+        border-radius: 8px !important;
+    }
+    
+    .stMultiSelect div[data-baseweb="select"] span,
+    .stSelectbox div[data-baseweb="select"] span {
+        color: #4a3728 !important;
+    }
+    
+    /* 输入框 - 强制深色文字 */
+    .stTextInput label, .stTextArea label {
+        color: #4a3728 !important;
+        font-weight: 500 !important;
+    }
+    
+    .stTextInput input, .stTextArea textarea {
+        background: #fffdf8 !important;
+        border: 1px solid #e8e0d5 !important;
+        border-radius: 8px !important;
+        color: #4a3728 !important;
+    }
+    
+    .stTextInput input::placeholder, .stTextArea textarea::placeholder {
+        color: #9a8a7a !important;
+    }
+    
+    /* 标题文字 */
+    h3, h4 {
+        color: #4a3728 !important;
+    }
+    
+    /* 提示文字 */
+    .stCaption {
+        color: #7a6a5a !important;
+    }
+    
+    /* 警告/错误框文字 */
+    .stAlert {
+        color: #4a3728 !important;
+    }
+    
+    .stAlert p, .stAlert span {
+        color: #4a3728 !important;
     }
     
     /* 结果显示 */
     .result-box {
-        background: #f9f6f1;
+        background: #f9f6f1 !important;
         border-radius: 10px;
         padding: 1.2rem;
         border: 1px solid #e8e0d5;
         margin-top: 1rem;
+        color: #4a3728 !important;
     }
     
     /* 隐藏Streamlit元素 */
@@ -140,47 +180,74 @@ st.markdown("""
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* 标签样式 */
-    .tag {
-        display: inline-block;
-        background: #e8dfd3;
-        color: #5a4a3a;
-        padding: 4px 12px;
-        border-radius: 16px;
-        font-size: 0.85rem;
-        margin: 2px;
+    /* 分隔线 */
+    hr {
+        border-color: #e8e0d5 !important;
     }
     
-    /* 选择提示 */
-    .select-hint {
-        color: #8a7a6a;
-        font-size: 0.85rem;
-        margin-top: 0.3rem;
+    /* 选择框下拉菜单 */
+    [data-baseweb="popover"] {
+        background: #fff !important;
+    }
+    
+    [data-baseweb="popover"] li {
+        color: #4a3728 !important;
+    }
+    
+    [data-baseweb="popover"] li:hover {
+        background: #f5f0e8 !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 
-def get_feishu_data(table_id: str, fields: list = None) -> list:
-    """从飞书表格获取数据"""
+def get_feishu_token() -> str:
+    """获取飞书访问令牌"""
+    # 使用环境变量或默认配置
+    app_id = os.getenv("FEISHU_APP_ID", "cli_a7f0e1c3b6f9d001")
+    app_secret = os.getenv("FEISHU_APP_SECRET", "dKj8mNpQrStUvWxYz123456789abcdef")
+    
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "app_id": app_id,
+        "app_secret": app_secret
+    }
+    
     try:
-        from src.graphs.nodes.feishu_read_node import FeishuBitableReader
-        
-        reader = FeishuBitableReader()
-        result = reader.search_records(
-            app_token=FEISHU_CONFIG['app_token'],
-            table_id=table_id
-        )
-        
-        items = result.get("data", {}).get("items", [])
-        return items
-    except Exception as e:
-        st.warning(f"获取飞书数据失败: {e}")
+        resp = requests.post(url, headers=headers, json=data, timeout=10)
+        result = resp.json()
+        if result.get("code") == 0:
+            return result.get("tenant_access_token", "")
+    except:
+        pass
+    return ""
+
+
+def get_feishu_data(table_id: str) -> list:
+    """从飞书表格获取数据"""
+    token = get_feishu_token()
+    if not token:
         return []
+    
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_CONFIG['app_token']}/tables/{table_id}/records"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        result = resp.json()
+        if result.get("code") == 0:
+            return result.get("data", {}).get("items", [])
+    except:
+        pass
+    return []
 
 
 def parse_products(records: list) -> list:
-    """解析产品记录，返回产品名称列表"""
+    """解析产品记录"""
     products = []
     for record in records:
         fields = record.get("fields", {})
@@ -192,7 +259,7 @@ def parse_products(records: list) -> list:
 
 
 def parse_hots(records: list) -> list:
-    """解析热点记录，返回热点信息列表"""
+    """解析热点记录"""
     hots = []
     for record in records:
         fields = record.get("fields", {})
@@ -227,13 +294,12 @@ def display_result(result: dict):
     
     st.success("✅ 生成成功！")
     
-    # 提取结果文本
     result_text = result.get("result", "")
     
     if result_text:
         st.markdown(f"""
         <div class="result-box">
-            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 0.9rem; color: #4a3728;">{result_text}</pre>
+            <pre style="white-space: pre-wrap; word-wrap: break-word; font-size: 0.9rem; color: #4a3728 !important;">{result_text}</pre>
         </div>
         """, unsafe_allow_html=True)
 
@@ -248,21 +314,18 @@ tab1, tab2, tab3 = st.tabs(["⚡ 快速生成", "🎯 自选生成", "⚙️ 设
 with tab1:
     st.markdown('<div class="card">', unsafe_allow_html=True)
     
-    # 工作流选择
     workflow_type = st.selectbox(
         "选择工作流",
         ["一键生成", "热点选题", "选题文案", "客户故事", "图片建议", "数据复盘"],
         help="选择要执行的工作流类型"
     )
     
-    # 发布账号选择
     publish_account = st.selectbox(
         "📱 发布账号",
         ["灵楠阁品牌号", "古典家具号"],
         help="选择发布内容的账号"
     )
     
-    # 执行按钮
     if st.button("🚀 开始生成", key="quick_gen"):
         with st.spinner("生成中，请稍候..."):
             payload = {
@@ -299,7 +362,6 @@ with tab2:
         st.markdown("#### 📦 产品选择")
         
         if products:
-            # 创建产品选项列表
             product_options = [f"{p['name']} ({p['category']})" if p['category'] else p['name'] for p in products]
             
             selected_products = st.multiselect(
@@ -313,7 +375,6 @@ with tab2:
             st.warning("⚠️ 暂无产品数据，请手动输入")
             selected_products = []
             
-            # 手动输入备用
             manual_products = st.text_input(
                 "手动输入产品名称",
                 placeholder="多个产品用逗号分隔，如：金丝楠小凳, 茶盘"
@@ -325,7 +386,6 @@ with tab2:
         st.markdown("#### 🔥 热点选择")
         
         if hots:
-            # 创建热点选项列表
             hot_options = [f"{h['title']} ({h['date']})" if h['date'] else h['title'] for h in hots]
             
             selected_hots = st.multiselect(
@@ -339,7 +399,6 @@ with tab2:
             st.warning("⚠️ 暂无热点数据，请手动输入")
             selected_hots = []
             
-            # 手动输入备用
             manual_hots = st.text_input(
                 "手动输入热点名称",
                 placeholder="多个热点用逗号分隔，如：端午节, 父亲节"
@@ -347,7 +406,6 @@ with tab2:
             if manual_hots:
                 selected_hots = [h.strip() for h in manual_hots.split(",") if h.strip()]
     
-    # 发布账号选择
     st.markdown("---")
     publish_account_custom = st.selectbox(
         "📱 发布账号",
@@ -355,24 +413,19 @@ with tab2:
         key="custom_account"
     )
     
-    # 执行按钮
     st.markdown("---")
     if st.button("✨ 生成定制内容", key="custom_gen", type="primary"):
-        # 验证选择
         if not selected_products:
             st.error("❌ 请至少选择一个产品")
         else:
             with st.spinner("生成中，请稍候..."):
-                # 提取产品名称（去掉分类后缀）
                 product_names = []
                 for p in selected_products:
-                    # 如果是 "产品名 (分类)" 格式，提取产品名
                     if " (" in p:
                         product_names.append(p.split(" (")[0])
                     else:
                         product_names.append(p)
                 
-                # 提取热点名称
                 hot_names = []
                 for h in selected_hots:
                     if " (" in h:
@@ -412,7 +465,7 @@ with tab3:
 
 # 页脚
 st.markdown("""
-<div style="text-align: center; padding: 1rem; color: #8a7a6a; font-size: 0.8rem;">
+<div style="text-align: center; padding: 1rem; color: #7a6a5a; font-size: 0.8rem;">
     🎋 灵楠阁 · 让东方美学融入日常生活
 </div>
 """, unsafe_allow_html=True)
