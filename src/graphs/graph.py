@@ -1252,12 +1252,15 @@ def _generate_from_selection(
                 # 记录结果
                 content_count += 1
                 generated_contents.append(content_organized)
+                logging.info(f"记录结果: write_success={write_success}, write_error={write_error}")
                 if write_success:
                     success_count += 1
                     status_messages.append(f"✅ {title} 已写入飞书")
                 else:
                     error_msg = write_error if write_error else "未知错误"
-                    error_messages.append(f"❌ {title} 写入失败(重试{max_retries}次): {error_msg[:200]}")
+                    error_msg_full = f"❌ {title} 写入失败(重试{max_retries}次): {error_msg[:200]}"
+                    logging.info(f"添加错误信息: {error_msg_full}")
+                    error_messages.append(error_msg_full)
                 
                 # 生成成功，跳出重试循环
                 break
