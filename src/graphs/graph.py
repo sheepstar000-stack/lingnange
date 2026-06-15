@@ -1579,30 +1579,58 @@ def _generate_from_selected_items(
                 "content_organized": content_organized
             })
             
-            # 写入飞书表格
-            try:
-                write_input = FeishuWriteInput(
-                    app_token=app_token,
-                    table_id=content_table_id,
-                    fields={
+            # 写入飞书表格（带重试和token检查）
+            body_with_image = body
+            if image_suggestion:
+                body_with_image = f"{body}\n\n📷 图片建议：\n{image_suggestion}"
+
+            write_success = False
+            write_error = ""
+            max_retries = 3
+            for write_retry in range(max_retries):
+                try:
+                    writer = FeishuBitableWriter()
+
+                    if not writer.access_token:
+                        write_error = "飞书access_token为空，请检查飞书集成配置"
+                        logging.error(f"✗ 写入失败(尝试{write_retry+1}): {write_error}")
+                        continue
+
+                    new_content_fields = {
                         "发布标题": title,
-                        "正文": body,
+                        "正文": body_with_image,
                         "封面文案": cover_text,
                         "图片建议": image_suggestion,
                         "发布标签": tags,
-                        "@薯账号": shu_account,
-                        "评论区引导语": comment_guide,
                         "发布账号": publish_account,
+                        "@薯账号": shu_account,
+                        "风险审核结果": "待审核",
+                        "关联选题": [],
                         "发布状态": "待审核",
-                        "内容整理": content_organized
+                        "内容整理": content_organized,
+                        "评论区引导语": comment_guide
                     }
-                )
-                write_output = feishu_write_node(write_input, config, runtime)
-                if write_output.success:
-                    success_count += 1
-                    logging.info(f"  ✓ 已写入: {title}")
-            except Exception as e:
-                logging.error(f"  ✗ 写入失败: {e}")
+
+                    logging.info(f"写入飞书(尝试{write_retry+1}): app_token={app_token[:10]}..., table_id={content_table_id}")
+                    add_result = writer.add_record(app_token, content_table_id, new_content_fields)
+                    logging.info(f"写入结果: code={add_result.get('code')}")
+
+                    if add_result.get("code") == 0:
+                        write_success = True
+                        logging.info(f"✓ 写入成功: {title}")
+                        break
+                    else:
+                        write_error = add_result.get("msg", "未知错误")
+                        logging.error(f"✗ 写入失败(尝试{write_retry+1}): code={add_result.get('code')}, msg={write_error}")
+                except Exception as e:
+                    import traceback
+                    write_error = f"{str(e)}"
+                    logging.error(f"✗ 写入异常(尝试{write_retry+1}): {write_error}\n{traceback.format_exc()}")
+
+            if write_success:
+                success_count += 1
+            else:
+                logging.error(f"✗ 最终写入失败(重试{max_retries}次): {write_error[:200]}")
                 
         except Exception as e:
             import traceback
