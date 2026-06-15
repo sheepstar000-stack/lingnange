@@ -1596,19 +1596,16 @@ def _generate_from_selected_items(
                         logging.error(f"✗ 写入失败(尝试{write_retry+1}): {write_error}")
                         continue
 
+                    # 使用与一键生成一致的字段名
                     new_content_fields = {
                         "发布标题": title,
                         "正文": body_with_image,
-                        "封面文案": cover_text,
-                        "图片建议": image_suggestion,
                         "发布标签": tags,
                         "发布账号": publish_account,
                         "@薯账号": shu_account,
                         "风险审核结果": "待审核",
                         "关联选题": [],
-                        "发布状态": "待审核",
-                        "内容整理": content_organized,
-                        "评论区引导语": comment_guide
+                        "内容整理": content_organized
                     }
 
                     logging.info(f"写入飞书(尝试{write_retry+1}): app_token={app_token[:10]}..., table_id={content_table_id}")
